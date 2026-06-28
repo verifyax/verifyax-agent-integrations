@@ -1,5 +1,9 @@
 # VerifyAX — OpenAI Custom GPT (Actions)
 
+> Using **Codex CLI** instead of a Custom GPT? It's an MCP client — see
+> [`codex-cli.md`](codex-cli.md) to wire up `@verifyax/mcp-server` directly (no Actions spec needed).
+
+
 `verifyax-actions.yaml` is a **GPT Actions–compatible OpenAPI spec**, derived from the faithful
 gateway mirror in [`../openapi/verifyax.yaml`](../openapi/verifyax.yaml). It lets a Custom GPT call
 the VerifyAX Gateway public API directly.
