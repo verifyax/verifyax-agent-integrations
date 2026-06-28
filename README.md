@@ -32,9 +32,9 @@ Pull the latest spec locally:
 scripts/sync-openapi.sh        # → openapi/verifyax.yaml
 ```
 
-A scheduled GitHub Action (`.github/workflows/sync-openapi.yml`) does the same daily and opens a
-PR whenever the spec changes, so API updates land here for review before flowing into the GPT and
-Gemini configs.
+A scheduled GitHub Action (`.github/workflows/sync-openapi.yml`) does the same daily and commits
+the mirror directly whenever the spec changes, so API updates land here automatically before
+flowing into the GPT and Gemini configs.
 
 ## License
 
