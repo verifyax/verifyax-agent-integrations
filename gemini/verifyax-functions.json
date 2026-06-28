@@ -1,0 +1,1111 @@
+[
+  {
+    "name": "createOneTimeLoginToken",
+    "description": "Creates a one-time token using API-key authenticated context. Response `example_links` put the token in the URL fragment (`#one-time-login-token=...`) so static hosts and cross-origin Referer headers do not receive the secret; the user-webapp redeems it via POST. The webapp does not read the token from the query string.\n"
+  },
+  {
+    "name": "createTicket",
+    "description": "Opens a ticket (a feedback or help/support message) on behalf of the API key's user. The user identity is taken from the API key and the email is resolved server-side, so only `message` (and optional `type`) are sent in the body. `type` defaults to `help_support`. Returns **400** if the user account has no email address, and **404** if the API key's user account cannot be found.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "message": {
+          "type": "STRING",
+          "description": "Ticket body text (non-empty)."
+        },
+        "type": {
+          "type": "STRING",
+          "description": "Ticket category. Defaults to `help_support` when omitted.",
+          "enum": [
+            "feedback",
+            "help_support"
+          ]
+        }
+      },
+      "required": [
+        "message"
+      ]
+    }
+  },
+  {
+    "name": "getBillingBalance",
+    "description": "Returns read-only billing balance fields for the API key tenant."
+  },
+  {
+    "name": "listScenarios",
+    "description": "Lists scenario rows with optional `scenario_type`, `status`, `limit`, and `offset` filters. Default `limit` upstream is 100 (max 1000).\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_type": {
+          "type": "STRING",
+          "enum": [
+            "info_exchange",
+            "interview"
+          ],
+          "description": "Filter by scenario type (`info_exchange` or `interview`)."
+        },
+        "status": {
+          "type": "ARRAY",
+          "items": {
+            "type": "STRING",
+            "enum": [
+              "INIT",
+              "PROCESSING",
+              "SUCCESS",
+              "FAILED",
+              "CANCELLED"
+            ]
+          },
+          "description": "Repeatable filter on scenario row `status`. Values: `INIT`, `PROCESSING`, `SUCCESS`, `FAILED`, `CANCELLED`. `SUCCESS` means the scenario is materialised and runnable (`definition_bucket_path` set and scenario JSON uploaded). Use `scenario_creation_job_status` on list/get responses to track in-flight generation jobs.\n"
+        },
+        "limit": {
+          "type": "INTEGER",
+          "description": "Maximum number of records to return (pagination page size)."
+        },
+        "offset": {
+          "type": "INTEGER",
+          "description": "Number of records to skip from the beginning of the sorted result set."
+        }
+      }
+    }
+  },
+  {
+    "name": "createScenario",
+    "description": "**Step 1 of a 2-step JSON import.** Creates an empty environment row synchronously (no `scenario_creation` job). The scenario is **not runnable** until step 2: uploading the definition via `PATCH /v1/scenarios/{uuid}/artifacts`. Starting a run on a shell before the artifacts are uploaded returns **409 `scenario_definition_missing`** from `/v1/engine/simulate/scenario` and `/v1/engine/workspace-credit-preview`. Use `scenario_type: info_exchange` for JSON imports. Sending `corpus_uuid` returns **400**. `job_uuid` in the response is null. Prefer `POST /v1/scenarios/generate` if you want a fully-formed scenario in one call.\n**Developer-only:** requires the API-key owner's Auth0 user to have the platform `developer` role (enforced by the gateway via Auth0 Management API).\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "name": {
+          "type": "STRING",
+          "description": "Display name (unique per workspace after normalisation upstream)."
+        },
+        "description": {
+          "type": "STRING"
+        },
+        "scenario_type": {
+          "type": "STRING",
+          "description": "Dialogue kind stored on the row when known at create time.",
+          "enum": [
+            "info_exchange",
+            "interview"
+          ]
+        },
+        "tags": {
+          "type": "ARRAY",
+          "description": "Optional workspace tags stored on the environment.",
+          "items": {
+            "type": "STRING"
+          }
+        },
+        "creation_parameters": {
+          "type": "OBJECT",
+          "description": "Optional opaque creation metadata persisted on the environment."
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "generateScenario",
+    "description": "Queues LLM scenario_creation work. Returns the environment row (`uuid`, not `scenario_uuid`) plus `job_uuid`. When num_scenarios is greater than 1, creates a batch (`batch_uuid`, `batch_scenario_uuids`) and requires `tag_pool`. Runs a billing credit preflight before enqueueing (**402** when balance is insufficient, **502** when billing is unreachable). Tenant UUIDs are injected by the gateway from the API key. Use the returned `uuid` as the `scenario_uuid` path parameter on `/v1/scenarios/{scenario_uuid}/...`.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "name": {
+          "type": "STRING",
+          "description": "Scenario name (workspace-unique after normalisation)."
+        },
+        "scenario_type": {
+          "type": "STRING",
+          "description": "Multi-agent `info_exchange` (default) or 1-to-1 `interview`. Controls tag caps and NPC layout.",
+          "enum": [
+            "info_exchange",
+            "interview"
+          ]
+        },
+        "context_prompt": {
+          "type": "STRING",
+          "description": "Optional context to guide generation (info_exchange and interview)."
+        },
+        "tags": {
+          "type": "ARRAY",
+          "description": "Explicit skill tag `name` values from GET /web/api/v1/tags. At most 5 (info_exchange) or 2 (interview). Each tag's `allowed_scenario_types` must include your `scenario_type`. Invalid tags fail on the async job, not synchronously.",
+          "items": {
+            "type": "STRING"
+          }
+        },
+        "num_scenarios": {
+          "type": "INTEGER",
+          "description": "Batch size. 1 = single scenario. Greater than 1 requires tag_pool and returns uuid, batch_uuid, and batch_scenario_uuids on the response."
+        },
+        "tag_pool": {
+          "type": "ARRAY",
+          "description": "Required when num_scenarios > 1; universe of tag `name` values to sample from. Each entry must allow your `scenario_type` per the tag catalogue.",
+          "items": {
+            "type": "STRING"
+          }
+        },
+        "include_tags": {
+          "type": "ARRAY",
+          "description": "Batch only; tags required in every scenario. Must be a subset of tag_pool. total_tags must be at least the number of distinct include_tags.",
+          "items": {
+            "type": "STRING"
+          }
+        },
+        "total_tags": {
+          "type": "INTEGER",
+          "description": "Batch only; tags drawn per scenario from tag_pool (default len(tag_pool)). Capped at 5 info_exchange / 2 interview."
+        },
+        "max_tags_per_npc": {
+          "type": "INTEGER",
+          "description": "Batch only; caps tags per NPC. NPC count = ceil(total_tags / max_tags_per_npc). Ignored for interview (single NPC). Worker default 1 when omitted."
+        }
+      },
+      "required": [
+        "name",
+        "scenario_type"
+      ]
+    }
+  },
+  {
+    "name": "getScenario",
+    "description": "Returns scenario metadata, definition paths, optional `scenario_creation_job_status`, complexity fields, etc.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+        }
+      },
+      "required": [
+        "scenario_uuid"
+      ]
+    }
+  },
+  {
+    "name": "updateScenario",
+    "description": "Partial metadata update (name and description only).",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+        },
+        "name": {
+          "type": "STRING",
+          "description": "New display name (workspace uniqueness enforced upstream)."
+        },
+        "description": {
+          "type": "STRING",
+          "description": "New environment description text."
+        }
+      },
+      "required": [
+        "scenario_uuid"
+      ]
+    }
+  },
+  {
+    "name": "deleteScenario",
+    "description": "Deletes the scenario in the current workspace context. Returns **409** when the scenario still has any non-deleted simulation run pointing at it.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+        }
+      },
+      "required": [
+        "scenario_uuid"
+      ]
+    }
+  },
+  {
+    "name": "generateScenarioCopy",
+    "description": "Replays `creation_parameters` from the source scenario through the same LLM generation path as `POST /v1/scenarios/generate`. Response shape matches generate (`uuid`, `job_uuid`, optional batch fields). Returns **400** when the source has no saved creation snapshot. Tenant scope is injected from the API key (query on upstream).\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+        }
+      },
+      "required": [
+        "scenario_uuid"
+      ]
+    }
+  },
+  {
+    "name": "copyScenario",
+    "description": "Duplicates storage (`scenario.json` when present) into a new environment row in the same workspace. Optional `new_name` query parameter; default name is `{original} (Copy)` with numeric suffixes when needed.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+        },
+        "new_name": {
+          "type": "STRING",
+          "description": "Optional new display name when copying an environment in-place."
+        }
+      },
+      "required": [
+        "scenario_uuid"
+      ]
+    }
+  },
+  {
+    "name": "getScenarioJob",
+    "description": "Returns all non-deleted jobs for the environment (newest first), including `scenario_creation` and other job types.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+        }
+      },
+      "required": [
+        "scenario_uuid"
+      ]
+    }
+  },
+  {
+    "name": "getScenarioArtifacts",
+    "description": "Downloads `scenario.json` (or legacy `benchmark.json` for corpus-linked rows) from storage. **404** when `definition_bucket_path` is unset or the file is missing.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+        }
+      },
+      "required": [
+        "scenario_uuid"
+      ]
+    }
+  },
+  {
+    "name": "patchScenarioArtifacts",
+    "description": "Replaces the entire `scenario.json` object in storage with the request body (full document upload, not a deep merge). Requires `definition_bucket_path` on the environment.\n**Developer-only:** requires the API-key owner's Auth0 user to have the platform `developer` role (enforced by the gateway via Auth0 Management API).\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+        },
+        "body": {
+          "type": "OBJECT"
+        }
+      },
+      "required": [
+        "scenario_uuid",
+        "body"
+      ]
+    }
+  },
+  {
+    "name": "listJobs",
+    "description": "Lists async jobs for the workspace (scenario creation, engine simulation runs, evaluations, etc.) with optional `current_status` filter and pagination.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "limit": {
+          "type": "INTEGER",
+          "description": "Maximum number of records to return (pagination page size)."
+        },
+        "offset": {
+          "type": "INTEGER",
+          "description": "Number of records to skip from the beginning of the sorted result set."
+        },
+        "current_status": {
+          "type": "STRING",
+          "enum": [
+            "PENDING",
+            "PROCESSING",
+            "COMPLETED",
+            "FAILED",
+            "CANCELLED"
+          ],
+          "description": "Filter jobs whose `current_status` equals this value (exact string match). Values: `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `CANCELLED`.\n"
+        }
+      }
+    }
+  },
+  {
+    "name": "getJob",
+    "description": "Returns one job by UUID — current status, progress, and error details.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "job_uuid": {
+          "type": "STRING",
+          "description": "UUID of an async job (creation, engine, evaluation, etc.) in the workspace."
+        }
+      },
+      "required": [
+        "job_uuid"
+      ]
+    }
+  },
+  {
+    "name": "deleteJob",
+    "description": "Deletes a job record. Typically allowed only for terminal states (`COMPLETED`, `FAILED`, `CANCELLED`).",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "job_uuid": {
+          "type": "STRING",
+          "description": "UUID of an async job (creation, engine, evaluation, etc.) in the workspace."
+        }
+      },
+      "required": [
+        "job_uuid"
+      ]
+    }
+  },
+  {
+    "name": "retryJob",
+    "description": "Submits a retry for a `FAILED` or retriable job in the workspace context.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "job_uuid": {
+          "type": "STRING",
+          "description": "UUID of an async job (creation, engine, evaluation, etc.) in the workspace."
+        }
+      },
+      "required": [
+        "job_uuid"
+      ]
+    }
+  },
+  {
+    "name": "listAgents",
+    "description": "Lists agents registered in the workspace with optional type filter and pagination.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "agent_type": {
+          "type": "STRING",
+          "description": "Filter by communication protocol (`A2A` or `API`)."
+        },
+        "limit": {
+          "type": "INTEGER",
+          "description": "Maximum number of records to return (pagination page size)."
+        },
+        "offset": {
+          "type": "INTEGER",
+          "description": "Number of records to skip from the beginning of the sorted result set."
+        }
+      }
+    }
+  },
+  {
+    "name": "createAgent",
+    "description": "Registers an agent endpoint (A2A, API, etc.) for use in simulations and tests.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "name": {
+          "type": "STRING",
+          "description": "Display name for the registered agent. Must be unique within the workspace; if the requested name is taken, the server assigns the next available suffix (e.g. My Agent (1))."
+        },
+        "description": {
+          "type": "STRING",
+          "description": "Optional notes about the agent’s role or integration."
+        },
+        "agent_url": {
+          "type": "STRING",
+          "description": "Base URL for A2A/API agents, or connection entrypoint as required by agent_type."
+        },
+        "agent_type": {
+          "type": "STRING",
+          "description": "Communication protocol (`A2A` or `API`). Defaults to `A2A`.",
+          "enum": [
+            "A2A",
+            "API",
+            "EXTENSION"
+          ]
+        },
+        "agent_parameters": {
+          "type": "OBJECT",
+          "description": "Connector-specific settings (timeouts, headers, tools, auth hints, etc.). Shape depends on agent_type; see product docs for supported keys.\n"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "getAgent",
+    "description": "Returns a single agent definition including URL and parameters.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "UUID of a registered workspace agent."
+        }
+      },
+      "required": [
+        "agent_uuid"
+      ]
+    }
+  },
+  {
+    "name": "updateAgent",
+    "description": "Partially updates agent settings (name, URL, agent_parameters).",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "UUID of a registered workspace agent."
+        },
+        "name": {
+          "type": "STRING",
+          "description": "New display name for the agent. Must be unique within the workspace; if the requested name is taken, the server assigns the next available suffix (e.g. My Agent (1))."
+        },
+        "description": {
+          "type": "STRING",
+          "description": "Updated agent description text."
+        },
+        "agent_url": {
+          "type": "STRING",
+          "description": "Updated endpoint URL when the deployment location changes."
+        },
+        "agent_type": {
+          "type": "STRING",
+          "description": "Switch connector type when migrating how VerifyAX talks to the agent.",
+          "enum": [
+            "A2A",
+            "API",
+            "EXTENSION"
+          ]
+        },
+        "agent_parameters": {
+          "type": "OBJECT",
+          "description": "Merged or replaced connector settings (upstream merge rules apply)."
+        }
+      },
+      "required": [
+        "agent_uuid"
+      ]
+    }
+  },
+  {
+    "name": "deleteAgent",
+    "description": "Removes the agent from the workspace registry.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "UUID of a registered workspace agent."
+        }
+      },
+      "required": [
+        "agent_uuid"
+      ]
+    }
+  },
+  {
+    "name": "testAgentCard",
+    "description": "Validates connectivity by fetching an A2A-style agent card URL through the gateway connector.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "agent_url": {
+          "type": "STRING",
+          "description": "Absolute URL of the `.well-known` agent card or root to fetch.",
+          "nullable": true
+        },
+        "agent_type": {
+          "type": "STRING",
+          "description": "Connector hint; defaults to A2A card discovery semantics."
+        },
+        "agent_parameters": {
+          "type": "OBJECT",
+          "description": "Optional extra parameters passed to the connector (timeouts, headers, etc.).",
+          "nullable": true
+        }
+      }
+    }
+  },
+  {
+    "name": "testRestAgent",
+    "description": "Sends a configurable HTTP request to a REST agent and returns the proxied response for debugging.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "url": {
+          "type": "STRING",
+          "description": "Fully qualified URL to invoke (method applied as given)."
+        },
+        "method": {
+          "type": "STRING",
+          "description": "HTTP verb (GET, POST, PUT, PATCH, DELETE, …)."
+        },
+        "headers": {
+          "type": "OBJECT",
+          "description": "Outbound request headers (e.g. Authorization, Content-Type)."
+        },
+        "body": {
+          "type": "OBJECT",
+          "description": "Optional JSON object body for non-GET calls; arbitrary keys are forwarded upstream."
+        },
+        "timeout": {
+          "type": "NUMBER",
+          "description": "Per-request timeout in seconds enforced server-side."
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "testCurlAgent",
+    "description": "Executes a curl-style agent definition server-side with a timeout for integration checks.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "curl_command": {
+          "type": "STRING",
+          "description": "Full curl command line as a single string (quoting rules apply server-side)."
+        },
+        "timeout": {
+          "type": "NUMBER",
+          "description": "Maximum seconds to wait for the proxied curl execution."
+        }
+      },
+      "required": [
+        "curl_command"
+      ]
+    }
+  },
+  {
+    "name": "previewWorkspaceCredits",
+    "description": "Unified credit preview: organisation balance, pending ENGINE verification runs and scenario_creation jobs (with stored estimates), and either `newRunEstimatedCredits` (`mode: scenario_run`) or `newGenerationEstimatedCredits` (`mode: scenario_generation`). The estimate field that does not apply is `null`. Tenant UUIDs in the body are overwritten by the gateway from the API key (see API overview).\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "mode": {
+          "type": "STRING",
+          "description": "Select run-cost estimate vs scenario batch-generation estimate.",
+          "enum": [
+            "scenario_run",
+            "scenario_generation"
+          ]
+        },
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "Required when `mode` is `scenario_run` — target simulation environment (the scenario row’s `uuid` from create or generate, passed here as `scenario_uuid`).\n"
+        },
+        "num_runs": {
+          "type": "INTEGER",
+          "description": "Required when `mode` is `scenario_run` — number of planned runs to price."
+        },
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "Optional agent hint for run-cost estimates (registry agent UUID).",
+          "nullable": true
+        },
+        "timeout_minutes": {
+          "type": "INTEGER",
+          "description": "scenario_run: overrides simulation_config.timeout_minutes for the credit estimate. scenario_generation: generation time budget (mirrors scenario create). Omit for defaults."
+        },
+        "num_scenarios": {
+          "type": "INTEGER",
+          "description": "Required when `mode` is `scenario_generation` — number of scenario creates to price."
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    }
+  },
+  {
+    "name": "simulateScenario",
+    "description": "Starts a scenario simulation; supports evaluate_on_complete and multiple runs.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "Single scenario simulation environment to run against — the scenario row’s `uuid` from create or generate responses.\n"
+        },
+        "environment_uuids": {
+          "type": "ARRAY",
+          "description": "Ordered list of scenario environments to run in one request. Mutually exclusive with `environment_uuid`; must contain at least one UUID when used.\n",
+          "items": {
+            "type": "STRING"
+          }
+        },
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "Registered workspace agent to exercise. The gateway resolves URL, connector strategy, and auth from this agent before starting the simulation.\n"
+        },
+        "evaluate_on_complete": {
+          "type": "BOOLEAN",
+          "description": "When true, queue evaluation automatically after the run completes successfully."
+        },
+        "num_runs": {
+          "type": "INTEGER",
+          "description": "Number of parallel runs for robustness. Defaults to 1."
+        },
+        "timeout_minutes": {
+          "type": "INTEGER",
+          "description": "Optional wall-clock budget in minutes for this verification run. Overrides simulation_config.timeout_minutes in the scenario definition for billing and playground execution. Workbench UI presets 5–60 min."
+        }
+      },
+      "required": [
+        "scenario_uuid"
+      ]
+    }
+  },
+  {
+    "name": "triggerEvaluation",
+    "description": "Queues evaluation for a simulation run in `COMPLETED` status. Skip this if you set `evaluate_on_complete` on the trigger call.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "simulation_uuid": {
+          "type": "STRING",
+          "description": "Verification run to evaluate (`simulation_uuid` from the run record)."
+        }
+      },
+      "required": [
+        "simulation_uuid"
+      ]
+    }
+  },
+  {
+    "name": "listSimulations",
+    "description": "Paginated simulation search with rich filters (status, dates, run group, evaluation flags).",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING"
+        },
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "Restrict verification runs or lists to this registered workspace agent UUID."
+        },
+        "status": {
+          "type": "STRING",
+          "enum": [
+            "CREATED",
+            "IN_PROGRESS",
+            "COMPLETED",
+            "FAILED",
+            "CANCELLED"
+          ],
+          "description": "Filter verification runs whose `status` equals this value. Values: `CREATED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `CANCELLED`.\n"
+        },
+        "run_group_uuid": {
+          "type": "STRING",
+          "description": "Return runs that belong to this batched / multi-environment run group UUID."
+        },
+        "date_from": {
+          "type": "STRING",
+          "format": "date-time",
+          "description": "Lower bound on run `created_at` or comparable timestamp (inclusive)."
+        },
+        "date_to": {
+          "type": "STRING",
+          "format": "date-time",
+          "description": "Upper bound on run `created_at` or comparable timestamp (inclusive)."
+        },
+        "search": {
+          "type": "STRING",
+          "description": "Free-text filter applied to run metadata or identifiers (upstream-defined)."
+        },
+        "has_single_evaluation": {
+          "type": "BOOLEAN",
+          "description": "When true, restrict to runs that have exactly one linked evaluation job."
+        },
+        "group_by_run_group": {
+          "type": "BOOLEAN",
+          "description": "When true, collapse list results to one row per `run_group_uuid` (upstream semantics)."
+        },
+        "include_evaluation_jobs": {
+          "type": "BOOLEAN",
+          "description": "When true, embed evaluation job summaries on each listed run (heavier payload)."
+        },
+        "limit": {
+          "type": "INTEGER",
+          "description": "Maximum number of records to return (pagination page size)."
+        },
+        "offset": {
+          "type": "INTEGER",
+          "description": "Number of records to skip from the beginning of the sorted result set."
+        }
+      }
+    }
+  },
+  {
+    "name": "listSimulationsByScenario",
+    "description": "Returns simulations that ran against a specific scenario with optional agent and status filters.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+        },
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "Restrict verification runs or lists to this registered workspace agent UUID."
+        },
+        "status": {
+          "type": "STRING",
+          "enum": [
+            "CREATED",
+            "IN_PROGRESS",
+            "COMPLETED",
+            "FAILED",
+            "CANCELLED"
+          ],
+          "description": "Filter verification runs whose `status` equals this value. Values: `CREATED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `CANCELLED`.\n"
+        },
+        "limit": {
+          "type": "INTEGER",
+          "description": "Maximum number of records to return (pagination page size)."
+        },
+        "offset": {
+          "type": "INTEGER",
+          "description": "Number of records to skip from the beginning of the sorted result set."
+        }
+      },
+      "required": [
+        "scenario_uuid"
+      ]
+    }
+  },
+  {
+    "name": "getSimulationEvaluationBySimulationId",
+    "description": "Returns the latest evaluation payload for a simulation UUID.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "id": {
+          "type": "STRING"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "getSimulationEvaluationScores",
+    "description": "Returns per-tag and overall score aggregates for the latest evaluation on a simulation.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "id": {
+          "type": "STRING"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "getBatchSimulationScores",
+    "description": "Returns score breakdowns for multiple simulation UUIDs.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "ids": {
+          "type": "ARRAY",
+          "items": {
+            "type": "STRING"
+          },
+          "description": "Simulation UUIDs. Supports repeated params (`?ids=a&ids=b`) or comma separated values (`?ids=a,b`).\n"
+        }
+      },
+      "required": [
+        "ids"
+      ]
+    }
+  },
+  {
+    "name": "getSimulationEvaluation",
+    "description": "Downloads evaluation results for a job UUID including aggregated scores and payloads when ready.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "evaluation_job_uuid": {
+          "type": "STRING"
+        },
+        "item_identifier": {
+          "type": "STRING",
+          "description": "Optional opaque item key when downloading evaluation payloads (upstream-specific)."
+        }
+      },
+      "required": [
+        "evaluation_job_uuid"
+      ]
+    }
+  },
+  {
+    "name": "getSimulation",
+    "description": "Returns full run detail including nested evaluation job references.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "simulation_uuid": {
+          "type": "STRING",
+          "description": "Identifier of a **verification run**. Use the `simulation_uuid` returned when starting a run or listed under `GET /v1/simulations`.\n"
+        }
+      },
+      "required": [
+        "simulation_uuid"
+      ]
+    }
+  },
+  {
+    "name": "deleteSimulation",
+    "description": "Permanently removes a simulation record when allowed by policy.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "simulation_uuid": {
+          "type": "STRING",
+          "description": "Identifier of a **verification run**. Use the `simulation_uuid` returned when starting a run or listed under `GET /v1/simulations`.\n"
+        }
+      },
+      "required": [
+        "simulation_uuid"
+      ]
+    }
+  },
+  {
+    "name": "cancelSimulation",
+    "description": "Cancels a still-active simulation and returns a cancellation result envelope.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "simulation_uuid": {
+          "type": "STRING",
+          "description": "Identifier of a **verification run**. Use the `simulation_uuid` returned when starting a run or listed under `GET /v1/simulations`.\n"
+        }
+      },
+      "required": [
+        "simulation_uuid"
+      ]
+    }
+  },
+  {
+    "name": "downloadSimulationFile",
+    "description": "Downloads a binary artifact persisted for a simulation run (transcripts, evidence files, evaluation artifacts). The `path` query parameter is relative to the run directory and must start with `files/` (for example `files/messages/round_1/1_report.pdf`). Tenant scope is derived from your API key, so `organization_uuid`/`workspace_uuid` are not supplied.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "simulation_uuid": {
+          "type": "STRING",
+          "description": "Identifier of a **verification run**. Use the `simulation_uuid` returned when starting a run or listed under `GET /v1/simulations`.\n"
+        },
+        "path": {
+          "type": "STRING",
+          "description": "Relative path under the run directory; must start with `files/`."
+        }
+      },
+      "required": [
+        "simulation_uuid",
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "listAuditLogs",
+    "description": "Lists organization audit log entries with optional date range, actor, and action filters.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "from": {
+          "type": "STRING",
+          "format": "date-time",
+          "description": "Start timestamp (inclusive). Must be provided with `to`."
+        },
+        "to": {
+          "type": "STRING",
+          "format": "date-time",
+          "description": "End timestamp (inclusive). Must be provided with `from`."
+        },
+        "actor": {
+          "type": "STRING",
+          "description": "Actor identifier (user UUID or API key prefix)."
+        },
+        "action": {
+          "type": "STRING",
+          "description": "Action filter."
+        },
+        "limit": {
+          "type": "INTEGER",
+          "description": "Maximum number of records to return (pagination page size)."
+        },
+        "offset": {
+          "type": "INTEGER",
+          "description": "Number of records to skip from the beginning of the sorted result set."
+        }
+      }
+    }
+  },
+  {
+    "name": "listUsageEvents",
+    "description": "Lists billing or analytics usage events with filters for product area, related resource IDs, and pagination.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "product_area": {
+          "type": "STRING",
+          "description": "Filter usage events by billing product area code (ENGINE, SCENARIO_CREATION, etc.)."
+        },
+        "failed": {
+          "type": "BOOLEAN",
+          "description": "When set, return only failed (`true`) or only successful (`false`) usage events."
+        },
+        "event_start_from": {
+          "type": "STRING",
+          "format": "date-time",
+          "description": "Lower bound on usage event start timestamp (inclusive)."
+        },
+        "event_start_to": {
+          "type": "STRING",
+          "format": "date-time",
+          "description": "Upper bound on usage event start timestamp (inclusive)."
+        },
+        "simulation_uuid": {
+          "type": "STRING",
+          "description": "Filter usage events linked to a specific verification run."
+        },
+        "job_uuid": {
+          "type": "STRING",
+          "description": "Filter usage events to those emitted for this async job UUID."
+        },
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "Filter usage events or other lists to this simulation environment UUID."
+        },
+        "simulation_job_uuid": {
+          "type": "STRING",
+          "description": "Filter usage events tied to this scenario-creation or simulation job identifier string."
+        },
+        "evaluation_job_uuid": {
+          "type": "STRING",
+          "description": "Filter usage events associated with this evaluation job UUID."
+        },
+        "limit": {
+          "type": "INTEGER",
+          "description": "Maximum number of records to return (pagination page size)."
+        },
+        "offset": {
+          "type": "INTEGER",
+          "description": "Number of records to skip from the beginning of the sorted result set."
+        }
+      }
+    }
+  },
+  {
+    "name": "getUsageEvent",
+    "description": "Fetches one usage event by its identifier for drill-down or reconciliation.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "event_id": {
+          "type": "STRING"
+        }
+      },
+      "required": [
+        "event_id"
+      ]
+    }
+  },
+  {
+    "name": "listUsageCalls",
+    "description": "Lists model or provider call rows (token usage, latency) scoped by event or model filters.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "event_uuid": {
+          "type": "STRING",
+          "description": "When listing usage calls, restrict to rows for this parent usage event UUID."
+        },
+        "provider_name": {
+          "type": "STRING",
+          "description": "Filter usage calls by LLM provider name (e.g. OpenAI, Anthropic)."
+        },
+        "model_name": {
+          "type": "STRING",
+          "description": "Filter usage calls by model id or display name string."
+        },
+        "call_start_from": {
+          "type": "STRING",
+          "format": "date-time",
+          "description": "Lower bound on per-call start timestamp when listing usage calls (inclusive)."
+        },
+        "call_start_to": {
+          "type": "STRING",
+          "format": "date-time",
+          "description": "Upper bound on per-call start timestamp when listing usage calls (inclusive)."
+        },
+        "limit": {
+          "type": "INTEGER",
+          "description": "Maximum number of records to return (pagination page size)."
+        },
+        "offset": {
+          "type": "INTEGER",
+          "description": "Number of records to skip from the beginning of the sorted result set."
+        }
+      }
+    }
+  },
+  {
+    "name": "validateJsonPayload",
+    "description": "Validates a JSON **string** against the scenario input model (`schema: scenario`, default). Always returns **200** with a human-readable `result` field (`VALID` / `INVALID` and error lines); malformed JSON or schema violations are expressed in `result`, not via 4xx.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "json": {
+          "type": "STRING",
+          "description": "JSON string to validate."
+        },
+        "schema": {
+          "type": "STRING",
+          "description": "Validator id. Use `scenario` (validates scenario input via Pydantic; same model as GET /v1/validation/schema/scenario).\n",
+          "enum": [
+            "scenario"
+          ]
+        }
+      },
+      "required": [
+        "json"
+      ]
+    }
+  },
+  {
+    "name": "getValidationSchemaScenario",
+    "description": "Returns the canonical scenario JSON Schema document for client-side or offline validation."
+  },
+  {
+    "name": "listSkillTags",
+    "description": "Returns the scenario skill tag catalogue used by scenario generation, as a bare JSON array. The organization is derived from your API key, so the response is the global catalogue merged with your organization's custom tag overlay. Custom (org-scoped) tags are flagged with `custom: true`; global tags carry `custom: false`.\nBefore `POST /v1/scenarios/generate`, filter for tags whose `allowed_scenario_types` includes your `scenario_type`. Tag existence and compatibility are validated asynchronously by the `scenario_creation` worker, so invalid tags yield **201** then a **FAILED** job, not a synchronous **400**.\n"
+  }
+]

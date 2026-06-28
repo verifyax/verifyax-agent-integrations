@@ -13,7 +13,7 @@ agent-tool layer.
 ```
 openapi/        # Mirror of the gateway's public OpenAPI spec (synced — do not hand-edit)
 openai/         # Custom GPT Actions spec (derived from the mirror) + setup guide
-gemini/         # Gemini CLI extension + MCP setup docs
+gemini/         # Gemini CLI MCP setup + API/Vertex function declarations (derived)
 scripts/        # sync-openapi.sh and build helpers
 .github/        # sync-openapi workflow
 ```
