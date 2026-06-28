@@ -3,6 +3,17 @@
 Handoff plan for extending VerifyAX distribution beyond Claude Code to the OpenAI and Gemini
 ecosystems. Written to seed a new, integrations-scoped Claude Code session.
 
+## Status (2026-06-28)
+
+Delivered in `v0.1.0`: repo bootstrap, OpenAPI sync + daily auto-rebuild workflow, OpenAI GPT
+Actions spec + Codex CLI docs, Gemini CLI setup + function declarations. The MCP server is
+published on npm and **listed in the official MCP registry** as `io.github.verifyax/mcp-server`
+(work item 3 — done; source repo is `verifyax/verifyax-mcp`).
+
+Remaining / optional: smithery.ai listing (web submission); mcp.so (auto-crawls the registry);
+upstream gateway spec fixes (`info.license`, a 3.1-style `nullable` — currently normalized in the
+build transform, better fixed at source); push-based spec sync via `repository_dispatch`.
+
 ## Context / what already exists
 
 - **`verifyax/verifyax-plugins`** — published Claude Code plugin marketplace. Two plugins:
@@ -60,7 +71,8 @@ transform a COPY:
 
 ## Open questions / confirmations
 
-- MCP server **source repo** URL (needed for registry `server.json`).
+- ~~MCP server **source repo** URL (needed for registry `server.json`).~~ Resolved:
+  `https://github.com/verifyax/verifyax-mcp` (where `server.json` now lives).
 - Whether to also do push-based spec sync (API repo fires `repository_dispatch`).
 - GPT Store / Apps SDK / Gemini extension publishing policies move fast — verify current
   process before building (knowledge cutoff caveat).
