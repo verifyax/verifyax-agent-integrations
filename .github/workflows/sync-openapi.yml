@@ -1,14 +1,15 @@
 name: Sync OpenAPI spec
 
-# Pull-based sync of the VerifyAX Gateway public OpenAPI spec.
+# Pull-based sync of the VerifyAX Gateway public OpenAPI spec, plus a rebuild of
+# the provider artifacts derived from it (OpenAI Actions, Gemini functions).
 # Runs on GitHub-hosted runners (open internet), so it can reach the gateway.
-# Commits the mirror directly to the default branch when it changes.
+# Commits the mirror + regenerated artifacts directly to the default branch when
+# they change, keeping derived files from going stale behind the mirror.
 #
 # Direct-commit (not a PR) on purpose: org policy disables "Allow GitHub Actions
 # to create and approve pull requests", so the default GITHUB_TOKEN can't open
-# PRs. Pushing the mirror needs only `contents: write`, which a workflow can
-# grant itself regardless of that setting. The provider configs (openai/, gemini/)
-# still derive from this file in their own steps, so review happens there.
+# PRs. Pushing needs only `contents: write`, which a workflow can grant itself
+# regardless of that setting.
 
 on:
   schedule:
@@ -33,14 +34,20 @@ jobs:
           v=$(python3 -c "import yaml;print(yaml.safe_load(open('openapi/verifyax.yaml')).get('info',{}).get('version','unknown'))")
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Commit mirror on drift
+      - name: Rebuild derived provider artifacts
         run: |
-          if git diff --quiet -- openapi/verifyax.yaml; then
+          scripts/build-openai-actions.sh
+          scripts/build-gemini-functions.sh
+
+      - name: Commit drift
+        run: |
+          paths="openapi/verifyax.yaml openai/verifyax-actions.yaml gemini/verifyax-functions.json"
+          if git diff --quiet -- $paths; then
             echo "No spec changes — nothing to commit."
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add openapi/verifyax.yaml
-          git commit -m "Sync OpenAPI spec (gateway v${{ steps.ver.outputs.version }})"
+          git add $paths
+          git commit -m "Sync OpenAPI spec + rebuild provider artifacts (gateway v${{ steps.ver.outputs.version }})"
           git push
