@@ -1,0 +1,44 @@
+name: Sync OpenAPI spec
+
+# Pull-based sync of the VerifyAX Gateway public OpenAPI spec.
+# Runs on GitHub-hosted runners (open internet), so it can reach the gateway.
+# Opens a PR only when the mirrored spec actually changes.
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # daily ~06:17 UTC (off the :00 mark on purpose)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync spec from gateway
+        run: scripts/sync-openapi.sh
+
+      - name: Extract spec version
+        id: ver
+        run: |
+          v=$(python3 -c "import yaml;print(yaml.safe_load(open('openapi/verifyax.yaml')).get('info',{}).get('version','unknown'))")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Open PR on drift
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "Sync OpenAPI spec (gateway v${{ steps.ver.outputs.version }})"
+          title: "Sync OpenAPI spec (gateway v${{ steps.ver.outputs.version }})"
+          body: |
+            Automated sync of the VerifyAX Gateway public OpenAPI spec
+            (https://console.verifyax.com/openapi.yaml).
+
+            Review the API changes below before merging — the OpenAI (GPT Actions)
+            and Gemini configs derive from this file.
+          branch: chore/sync-openapi
+          add-paths: openapi/verifyax.yaml
+          delete-branch: true
