@@ -1,0 +1,15 @@
+# Redocly lint config for the mirrored + derived OpenAPI specs.
+#
+# `openapi/verifyax.yaml` is a faithful 1:1 mirror of a third-party gateway
+# contract, and `openai/verifyax-actions.yaml` is derived from it. We don't
+# author either spec, so we don't assert a license the gateway hasn't declared.
+extends:
+  - recommended
+
+rules:
+  # The gateway's `info` block declares no `license`; mirroring/deriving it should
+  # not require us to invent one. (Genuine structural issues like 3.1-in-3.0
+  # nullability are fixed in the build transform, not silenced here.)
+  info-license: off
+  # Shared components the gateway defines but not every operation references.
+  no-unused-components: warn

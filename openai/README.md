@@ -36,20 +36,22 @@ remain in `description` prose are intentional documentation, not request fields.
 
 ## Validation
 
-Lint with Redocly:
+Lint with Redocly (config in [`../redocly.yaml`](../redocly.yaml)):
 
 ```bash
 npx @redocly/cli lint openai/verifyax-actions.yaml
 ```
 
-Two **errors are inherited from the gateway spec** (they also fire on the unmodified mirror) and are
-best fixed upstream at the gateway, not patched in this derived copy:
+This spec validates with **0 errors**. Two issues in the raw gateway mirror are handled here:
 
-- `info` is missing a `license` field.
-- `SkillTag.benchmark_family` uses a `nullable`/`type` sibling pattern Redocly flags.
+- **3.1-in-3.0 nullability** — the gateway declares `openapi: 3.0.x` but uses `{type: "null"}`
+  branches (e.g. `SkillTag.benchmark_family`). The build transform rewrites these to valid 3.0
+  (`nullable`, dropping orphan `nullable` with no scalar `type`).
+- **Missing `info.license`** — we mirror a third-party contract and don't invent a license; the
+  Redocly config turns that documentation rule off rather than fabricate one.
 
-Neither blocks GPT Actions import. Remaining warnings are `no-unused-components` (shared components
-the gateway defines but some operations don't reference).
+Remaining output is `no-unused-components` **warnings** (shared components the gateway defines but
+some operations don't reference) — harmless for GPT Actions import.
 
 ## Scope note — all 46 operations are exposed
 

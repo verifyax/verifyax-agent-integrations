@@ -2865,7 +2865,6 @@ components:
               additionalProperties:
                 allOf:
                 - $ref: '#/components/schemas/PublicSimulationScoreSummary'
-                nullable: true
           required:
           - scores
       required:
@@ -3359,7 +3358,6 @@ components:
           - type: array
             items:
               type: string
-          - type: 'null'
           description: 'Benchmark family when set (e.g. agentharm, gaia, qna). Benchmark tags are generally
             info_exchange only; qna tags are interview only and must be the sole tag.
 

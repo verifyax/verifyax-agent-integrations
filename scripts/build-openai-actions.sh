@@ -95,7 +95,41 @@ for item in doc["paths"].values():
         if rb:
             strip_tenant(rb)
 
-# 3. Keep the Bearer security the gateway declares (assert it's intact).
+# 3. Normalize 3.1-style nullability to valid OpenAPI 3.0.x.
+#    The gateway spec declares `openapi: 3.0.x` but uses 3.1 constructs in places
+#    (a `{type: "null"}` branch inside oneOf/anyOf, or `type: [..., "null"]`),
+#    which is invalid 3.0. In 3.0, `nullable: true` is only meaningful as a sibling
+#    of a scalar `type`, so: drop null branches/members, set `nullable` only where a
+#    scalar `type` exists, and strip any orphan `nullable` (e.g. on a oneOf or a
+#    typeless additionalProperties) that would otherwise fail strict validators.
+def normalize_nullable(node):
+    if isinstance(node, dict):
+        for comb in ("oneOf", "anyOf"):
+            branches = node.get(comb)
+            if isinstance(branches, list):
+                kept = [b for b in branches
+                        if not (isinstance(b, dict) and b.get("type") == "null")]
+                node[comb] = kept
+                if len(kept) != len(branches) and isinstance(node.get("type"), str):
+                    node["nullable"] = True
+        t = node.get("type")
+        if isinstance(t, list):
+            if "null" in t:
+                node["nullable"] = True
+            non_null = [x for x in t if x != "null"]
+            node["type"] = non_null[0] if non_null else "string"
+        # `nullable` without a scalar `type` sibling is invalid in 3.0 — drop it.
+        if node.get("nullable") is True and not isinstance(node.get("type"), str):
+            del node["nullable"]
+        for v in node.values():
+            normalize_nullable(v)
+    elif isinstance(node, list):
+        for v in node:
+            normalize_nullable(v)
+
+normalize_nullable(doc)
+
+# 4. Keep the Bearer security the gateway declares (assert it's intact).
 schemes = doc.get("components", {}).get("securitySchemes", {})
 assert schemes, "no securitySchemes to carry over"
 
