@@ -102,4 +102,8 @@ resp = client.models.generate_content(
 - Function declarations use a **subset** of OpenAPI schema. The build inlines `$ref`s and simplifies
   constructs Gemini doesn't accept (e.g. `oneOf`/`anyOf` are collapsed). Validate against your target
   (Gemini API vs. Vertex differ slightly) before relying on edge-case fields.
-- All API operations are emitted. For a focused agent, pass only the declarations you need.
+- A **curated, intent-aligned subset** (~18 declarations) is emitted by default — enough to drive
+  the full eval workflow, with sensitive/low-value endpoints excluded (see
+  [`../scripts/verifyax_transforms/curate.py`](../scripts/verifyax_transforms/curate.py)). For the
+  full 46-operation surface, rebuild with `FULL=1`, e.g.
+  `FULL=1 OUT=gemini/verifyax-functions.full.json scripts/build-gemini-functions.sh`.

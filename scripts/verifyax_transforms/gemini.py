@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .curate import CURATED_OPERATION_IDS, unknown_curated_ids
 from .normalize import TENANT_FIELDS
 
 _METHODS = ("get", "post", "put", "patch", "delete")
@@ -36,18 +37,36 @@ _SAFE_FORMATS = {
 }
 
 
-def build_function_declarations(mirror: dict[str, Any]) -> tuple[list[dict], list[str]]:
+def build_function_declarations(
+    mirror: dict[str, Any], curate: bool = True
+) -> tuple[list[dict], list[str]]:
     """Return (declarations, warnings). Warnings record lossy union collapses so a
-    build can surface them rather than silently ship one arbitrary variant."""
+    build can surface them rather than silently ship one arbitrary variant.
+
+    When `curate` is true (default) only the intent-aligned operation set is
+    emitted (see curate.py); pass false for the full-surface opt-in build."""
     warnings: list[str] = []
     deref = _make_deref(mirror)
     decls: list[dict] = []
+
+    all_ids = {
+        op["operationId"]
+        for item in mirror.get("paths", {}).values()
+        for method, op in item.items()
+        if method in _METHODS and op.get("operationId")
+    }
+    if curate:
+        missing = unknown_curated_ids(all_ids)
+        if missing:
+            raise ValueError(f"curated operationIds not found in the spec: {sorted(missing)}")
 
     for path, item in mirror.get("paths", {}).items():
         for method, op in item.items():
             if method not in _METHODS or not op.get("operationId"):
                 continue
             name = op["operationId"]
+            if curate and name not in CURATED_OPERATION_IDS:
+                continue
             params: dict[str, Any] = {"type": "OBJECT", "properties": {}, "required": []}
 
             for raw in op.get("parameters", []):

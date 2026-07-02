@@ -1,37 +1,5 @@
 [
   {
-    "name": "createOneTimeLoginToken",
-    "description": "Creates a one-time token using API-key authenticated context. Response `example_links` put the token in the URL fragment (`#one-time-login-token=...`) so static hosts and cross-origin Referer headers do not receive the secret; the user-webapp redeems it via POST. The webapp does not read the token from the query string.\n"
-  },
-  {
-    "name": "createTicket",
-    "description": "Opens a ticket (a feedback or help/support message) on behalf of the API key's user. The user identity is taken from the API key and the email is resolved server-side, so only `message` (and optional `type`) are sent in the body. `type` defaults to `help_support`. Returns **400** if the user account has no email address, and **404** if the API key's user account cannot be found.\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "message": {
-          "type": "STRING",
-          "description": "Ticket body text (non-empty)."
-        },
-        "type": {
-          "type": "STRING",
-          "description": "Ticket category. Defaults to `help_support` when omitted.",
-          "enum": [
-            "feedback",
-            "help_support"
-          ]
-        }
-      },
-      "required": [
-        "message"
-      ]
-    }
-  },
-  {
-    "name": "getBillingBalance",
-    "description": "Returns read-only billing balance fields for the API key tenant."
-  },
-  {
     "name": "listScenarios",
     "description": "Lists scenario rows with optional `scenario_type`, `status`, `limit`, and `offset` filters. Default `limit` upstream is 100 (max 1000).\n",
     "parameters": {
@@ -68,44 +36,6 @@
           "description": "Number of records to skip from the beginning of the sorted result set."
         }
       }
-    }
-  },
-  {
-    "name": "createScenario",
-    "description": "**Step 1 of a 2-step JSON import.** Creates an empty environment row synchronously (no `scenario_creation` job). The scenario is **not runnable** until step 2: uploading the definition via `PATCH /v1/scenarios/{uuid}/artifacts`. Starting a run on a shell before the artifacts are uploaded returns **409 `scenario_definition_missing`** from `/v1/engine/simulate/scenario` and `/v1/engine/workspace-credit-preview`. Use `scenario_type: info_exchange` for JSON imports. Sending `corpus_uuid` returns **400**. `job_uuid` in the response is null. Prefer `POST /v1/scenarios/generate` if you want a fully-formed scenario in one call.\n**Developer-only:** requires the API-key owner's Auth0 user to have the platform `developer` role (enforced by the gateway via Auth0 Management API).\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "name": {
-          "type": "STRING",
-          "description": "Display name (unique per workspace after normalisation upstream)."
-        },
-        "description": {
-          "type": "STRING"
-        },
-        "scenario_type": {
-          "type": "STRING",
-          "description": "Dialogue kind stored on the row when known at create time.",
-          "enum": [
-            "info_exchange",
-            "interview"
-          ]
-        },
-        "tags": {
-          "type": "ARRAY",
-          "description": "Optional workspace tags stored on the environment.",
-          "items": {
-            "type": "STRING"
-          }
-        },
-        "creation_parameters": {
-          "type": "OBJECT",
-          "description": "Optional opaque creation metadata persisted on the environment."
-        }
-      },
-      "required": [
-        "name"
-      ]
     }
   },
   {
@@ -171,46 +101,6 @@
     }
   },
   {
-    "name": "getScenario",
-    "description": "Returns scenario metadata, definition paths, optional `scenario_creation_job_status`, complexity fields, etc.\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "scenario_uuid": {
-          "type": "STRING",
-          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
-        }
-      },
-      "required": [
-        "scenario_uuid"
-      ]
-    }
-  },
-  {
-    "name": "updateScenario",
-    "description": "Partial metadata update (name and description only).",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "scenario_uuid": {
-          "type": "STRING",
-          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
-        },
-        "name": {
-          "type": "STRING",
-          "description": "New display name (workspace uniqueness enforced upstream)."
-        },
-        "description": {
-          "type": "STRING",
-          "description": "New environment description text."
-        }
-      },
-      "required": [
-        "scenario_uuid"
-      ]
-    }
-  },
-  {
     "name": "deleteScenario",
     "description": "Deletes the scenario in the current workspace context. Returns **409** when the scenario still has any non-deleted simulation run pointing at it.\n",
     "parameters": {
@@ -219,42 +109,6 @@
         "scenario_uuid": {
           "type": "STRING",
           "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
-        }
-      },
-      "required": [
-        "scenario_uuid"
-      ]
-    }
-  },
-  {
-    "name": "generateScenarioCopy",
-    "description": "Replays `creation_parameters` from the source scenario through the same LLM generation path as `POST /v1/scenarios/generate`. Response shape matches generate (`uuid`, `job_uuid`, optional batch fields). Returns **400** when the source has no saved creation snapshot. Tenant scope is injected from the API key (query on upstream).\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "scenario_uuid": {
-          "type": "STRING",
-          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
-        }
-      },
-      "required": [
-        "scenario_uuid"
-      ]
-    }
-  },
-  {
-    "name": "copyScenario",
-    "description": "Duplicates storage (`scenario.json` when present) into a new environment row in the same workspace. Optional `new_name` query parameter; default name is `{original} (Copy)` with numeric suffixes when needed.\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "scenario_uuid": {
-          "type": "STRING",
-          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
-        },
-        "new_name": {
-          "type": "STRING",
-          "description": "Optional new display name when copying an environment in-place."
         }
       },
       "required": [
@@ -279,104 +133,8 @@
     }
   },
   {
-    "name": "getScenarioArtifacts",
-    "description": "Downloads `scenario.json` (or legacy `benchmark.json` for corpus-linked rows) from storage. **404** when `definition_bucket_path` is unset or the file is missing.\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "scenario_uuid": {
-          "type": "STRING",
-          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
-        }
-      },
-      "required": [
-        "scenario_uuid"
-      ]
-    }
-  },
-  {
-    "name": "patchScenarioArtifacts",
-    "description": "Replaces the entire `scenario.json` object in storage with the request body (full document upload, not a deep merge). Requires `definition_bucket_path` on the environment.\n**Developer-only:** requires the API-key owner's Auth0 user to have the platform `developer` role (enforced by the gateway via Auth0 Management API).\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "scenario_uuid": {
-          "type": "STRING",
-          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
-        },
-        "body": {
-          "type": "OBJECT"
-        }
-      },
-      "required": [
-        "scenario_uuid",
-        "body"
-      ]
-    }
-  },
-  {
-    "name": "listJobs",
-    "description": "Lists async jobs for the workspace (scenario creation, engine simulation runs, evaluations, etc.) with optional `current_status` filter and pagination.\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "limit": {
-          "type": "INTEGER",
-          "description": "Maximum number of records to return (pagination page size)."
-        },
-        "offset": {
-          "type": "INTEGER",
-          "description": "Number of records to skip from the beginning of the sorted result set."
-        },
-        "current_status": {
-          "type": "STRING",
-          "enum": [
-            "PENDING",
-            "PROCESSING",
-            "COMPLETED",
-            "FAILED",
-            "CANCELLED"
-          ],
-          "description": "Filter jobs whose `current_status` equals this value (exact string match). Values: `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `CANCELLED`.\n"
-        }
-      }
-    }
-  },
-  {
     "name": "getJob",
     "description": "Returns one job by UUID — current status, progress, and error details.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "job_uuid": {
-          "type": "STRING",
-          "description": "UUID of an async job (creation, engine, evaluation, etc.) in the workspace."
-        }
-      },
-      "required": [
-        "job_uuid"
-      ]
-    }
-  },
-  {
-    "name": "deleteJob",
-    "description": "Deletes a job record. Typically allowed only for terminal states (`COMPLETED`, `FAILED`, `CANCELLED`).",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "job_uuid": {
-          "type": "STRING",
-          "description": "UUID of an async job (creation, engine, evaluation, etc.) in the workspace."
-        }
-      },
-      "required": [
-        "job_uuid"
-      ]
-    }
-  },
-  {
-    "name": "retryJob",
-    "description": "Submits a retry for a `FAILED` or retriable job in the workspace context.",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -449,63 +207,6 @@
     }
   },
   {
-    "name": "getAgent",
-    "description": "Returns a single agent definition including URL and parameters.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "agent_uuid": {
-          "type": "STRING",
-          "description": "UUID of a registered workspace agent."
-        }
-      },
-      "required": [
-        "agent_uuid"
-      ]
-    }
-  },
-  {
-    "name": "updateAgent",
-    "description": "Partially updates agent settings (name, URL, agent_parameters).",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "agent_uuid": {
-          "type": "STRING",
-          "description": "UUID of a registered workspace agent."
-        },
-        "name": {
-          "type": "STRING",
-          "description": "New display name for the agent. Must be unique within the workspace; if the requested name is taken, the server assigns the next available suffix (e.g. My Agent (1))."
-        },
-        "description": {
-          "type": "STRING",
-          "description": "Updated agent description text."
-        },
-        "agent_url": {
-          "type": "STRING",
-          "description": "Updated endpoint URL when the deployment location changes."
-        },
-        "agent_type": {
-          "type": "STRING",
-          "description": "Switch connector type when migrating how VerifyAX talks to the agent.",
-          "enum": [
-            "A2A",
-            "API",
-            "EXTENSION"
-          ]
-        },
-        "agent_parameters": {
-          "type": "OBJECT",
-          "description": "Merged or replaced connector settings (upstream merge rules apply)."
-        }
-      },
-      "required": [
-        "agent_uuid"
-      ]
-    }
-  },
-  {
     "name": "deleteAgent",
     "description": "Removes the agent from the workspace registry.",
     "parameters": {
@@ -573,26 +274,6 @@
       },
       "required": [
         "url"
-      ]
-    }
-  },
-  {
-    "name": "testCurlAgent",
-    "description": "Executes a curl-style agent definition server-side with a timeout for integration checks.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "curl_command": {
-          "type": "STRING",
-          "description": "Full curl command line as a single string (quoting rules apply server-side)."
-        },
-        "timeout": {
-          "type": "NUMBER",
-          "description": "Maximum seconds to wait for the proxied curl execution."
-        }
-      },
-      "required": [
-        "curl_command"
       ]
     }
   },
@@ -758,94 +439,6 @@
     }
   },
   {
-    "name": "listSimulationsByScenario",
-    "description": "Returns simulations that ran against a specific scenario with optional agent and status filters.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "scenario_uuid": {
-          "type": "STRING",
-          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
-        },
-        "agent_uuid": {
-          "type": "STRING",
-          "description": "Restrict verification runs or lists to this registered workspace agent UUID."
-        },
-        "status": {
-          "type": "STRING",
-          "enum": [
-            "CREATED",
-            "IN_PROGRESS",
-            "COMPLETED",
-            "FAILED",
-            "CANCELLED"
-          ],
-          "description": "Filter verification runs whose `status` equals this value. Values: `CREATED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `CANCELLED`.\n"
-        },
-        "limit": {
-          "type": "INTEGER",
-          "description": "Maximum number of records to return (pagination page size)."
-        },
-        "offset": {
-          "type": "INTEGER",
-          "description": "Number of records to skip from the beginning of the sorted result set."
-        }
-      },
-      "required": [
-        "scenario_uuid"
-      ]
-    }
-  },
-  {
-    "name": "getSimulationEvaluationBySimulationId",
-    "description": "Returns the latest evaluation payload for a simulation UUID.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "id": {
-          "type": "STRING"
-        }
-      },
-      "required": [
-        "id"
-      ]
-    }
-  },
-  {
-    "name": "getSimulationEvaluationScores",
-    "description": "Returns per-tag and overall score aggregates for the latest evaluation on a simulation.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "id": {
-          "type": "STRING"
-        }
-      },
-      "required": [
-        "id"
-      ]
-    }
-  },
-  {
-    "name": "getBatchSimulationScores",
-    "description": "Returns score breakdowns for multiple simulation UUIDs.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "ids": {
-          "type": "ARRAY",
-          "items": {
-            "type": "STRING"
-          },
-          "description": "Simulation UUIDs. Supports repeated params (`?ids=a&ids=b`) or comma separated values (`?ids=a,b`).\n"
-        }
-      },
-      "required": [
-        "ids"
-      ]
-    }
-  },
-  {
     "name": "getSimulationEvaluation",
     "description": "Downloads evaluation results for a job UUID including aggregated scores and payloads when ready.",
     "parameters": {
@@ -878,94 +471,6 @@
       "required": [
         "simulation_uuid"
       ]
-    }
-  },
-  {
-    "name": "deleteSimulation",
-    "description": "Permanently removes a simulation record when allowed by policy.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "simulation_uuid": {
-          "type": "STRING",
-          "description": "Identifier of a **verification run**. Use the `simulation_uuid` returned when starting a run or listed under `GET /v1/simulations`.\n"
-        }
-      },
-      "required": [
-        "simulation_uuid"
-      ]
-    }
-  },
-  {
-    "name": "cancelSimulation",
-    "description": "Cancels a still-active simulation and returns a cancellation result envelope.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "simulation_uuid": {
-          "type": "STRING",
-          "description": "Identifier of a **verification run**. Use the `simulation_uuid` returned when starting a run or listed under `GET /v1/simulations`.\n"
-        }
-      },
-      "required": [
-        "simulation_uuid"
-      ]
-    }
-  },
-  {
-    "name": "downloadSimulationFile",
-    "description": "Downloads a binary artifact persisted for a simulation run (transcripts, evidence files, evaluation artifacts). The `path` query parameter is relative to the run directory and must start with `files/` (for example `files/messages/round_1/1_report.pdf`). Tenant scope is derived from your API key, so `organization_uuid`/`workspace_uuid` are not supplied.\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "simulation_uuid": {
-          "type": "STRING",
-          "description": "Identifier of a **verification run**. Use the `simulation_uuid` returned when starting a run or listed under `GET /v1/simulations`.\n"
-        },
-        "path": {
-          "type": "STRING",
-          "description": "Relative path under the run directory; must start with `files/`."
-        }
-      },
-      "required": [
-        "simulation_uuid",
-        "path"
-      ]
-    }
-  },
-  {
-    "name": "listAuditLogs",
-    "description": "Lists organization audit log entries with optional date range, actor, and action filters.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "from": {
-          "type": "STRING",
-          "format": "date-time",
-          "description": "Start timestamp (inclusive). Must be provided with `to`."
-        },
-        "to": {
-          "type": "STRING",
-          "format": "date-time",
-          "description": "End timestamp (inclusive). Must be provided with `from`."
-        },
-        "actor": {
-          "type": "STRING",
-          "description": "Actor identifier (user UUID or API key prefix)."
-        },
-        "action": {
-          "type": "STRING",
-          "description": "Action filter."
-        },
-        "limit": {
-          "type": "INTEGER",
-          "description": "Maximum number of records to return (pagination page size)."
-        },
-        "offset": {
-          "type": "INTEGER",
-          "description": "Number of records to skip from the beginning of the sorted result set."
-        }
-      }
     }
   },
   {
@@ -1022,87 +527,6 @@
         }
       }
     }
-  },
-  {
-    "name": "getUsageEvent",
-    "description": "Fetches one usage event by its identifier for drill-down or reconciliation.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "event_id": {
-          "type": "STRING"
-        }
-      },
-      "required": [
-        "event_id"
-      ]
-    }
-  },
-  {
-    "name": "listUsageCalls",
-    "description": "Lists model or provider call rows (token usage, latency) scoped by event or model filters.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "event_uuid": {
-          "type": "STRING",
-          "description": "When listing usage calls, restrict to rows for this parent usage event UUID."
-        },
-        "provider_name": {
-          "type": "STRING",
-          "description": "Filter usage calls by LLM provider name (e.g. OpenAI, Anthropic)."
-        },
-        "model_name": {
-          "type": "STRING",
-          "description": "Filter usage calls by model id or display name string."
-        },
-        "call_start_from": {
-          "type": "STRING",
-          "format": "date-time",
-          "description": "Lower bound on per-call start timestamp when listing usage calls (inclusive)."
-        },
-        "call_start_to": {
-          "type": "STRING",
-          "format": "date-time",
-          "description": "Upper bound on per-call start timestamp when listing usage calls (inclusive)."
-        },
-        "limit": {
-          "type": "INTEGER",
-          "description": "Maximum number of records to return (pagination page size)."
-        },
-        "offset": {
-          "type": "INTEGER",
-          "description": "Number of records to skip from the beginning of the sorted result set."
-        }
-      }
-    }
-  },
-  {
-    "name": "validateJsonPayload",
-    "description": "Validates a JSON **string** against the scenario input model (`schema: scenario`, default). Always returns **200** with a human-readable `result` field (`VALID` / `INVALID` and error lines); malformed JSON or schema violations are expressed in `result`, not via 4xx.\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "json": {
-          "type": "STRING",
-          "description": "JSON string to validate."
-        },
-        "schema": {
-          "type": "STRING",
-          "description": "Validator id. Use `scenario` (validates scenario input via Pydantic; same model as GET /v1/validation/schema/scenario).\n",
-          "enum": [
-            "scenario"
-          ]
-        }
-      },
-      "required": [
-        "json"
-      ]
-    }
-  },
-  {
-    "name": "getValidationSchemaScenario",
-    "description": "Returns the canonical scenario JSON Schema document for client-side or offline validation."
   },
   {
     "name": "listSkillTags",

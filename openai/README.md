@@ -53,10 +53,15 @@ This spec validates with **0 errors**. Two issues in the raw gateway mirror are 
 Remaining output is `no-unused-components` **warnings** (shared components the gateway defines but
 some operations don't reference) — harmless for GPT Actions import.
 
-## Scope note — all 46 operations are exposed
+## Scope — curated by default
 
-This spec mirrors the **entire** public API surface. The `@verifyax/mcp-server` deliberately exposes
-a curated **12-tool** subset for conversational use; some raw endpoints here (one-time-login token,
-audit logs, usage drill-down, job retry/delete, validation-schema) are not ideal for a no-code GPT
-and may bump GPT Actions' per-action operation limits. A curated Actions variant matching the MCP
-tool catalogue is a likely follow-up — see [`../PLAN.md`](../PLAN.md).
+This spec exposes a **curated, intent-aligned subset** (~18 operations) covering the full
+register → discover tags → generate → poll → preview → simulate → poll → evaluate → fetch → track
+spend workflow. Sensitive or low-value endpoints (one-time-login token, audit logs, per-call usage
+drill-down, job retry/delete, scenario copy/artifact editing, validation-schema) are **deliberately
+excluded** — better tool selection for the model, and a smaller surface well under GPT Actions'
+per-action limits. The exact set is defined in
+[`../scripts/verifyax_transforms/curate.py`](../scripts/verifyax_transforms/curate.py).
+
+**Full 46-operation surface (opt-in):** rebuild with `FULL=1`, e.g.
+`FULL=1 OUT=openai/verifyax-actions.full.yaml scripts/build-openai-actions.sh`.
