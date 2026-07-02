@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from .curate import CURATED_OPERATION_IDS, unknown_curated_ids
 from .normalize import TENANT_FIELDS, normalize_nullable_30, strip_tenant
 
 _METHODS = ("get", "post", "put", "patch", "delete")
@@ -23,11 +24,18 @@ def build_actions_spec(
     mirror: dict[str, Any],
     server_url: str,
     strip_segment: str = "v1",
+    curate: bool = True,
 ) -> dict[str, Any]:
-    """Return a new GPT Actions-compatible spec derived from `mirror` (unmutated)."""
+    """Return a new GPT Actions-compatible spec derived from `mirror` (unmutated).
+
+    When `curate` is true (default) only the intent-aligned operation set is kept
+    (see curate.py); pass false for the full-surface opt-in build."""
     doc = copy.deepcopy(mirror)
     if not str(doc.get("openapi", "")).startswith("3"):
         raise ValueError("input is not an OpenAPI 3.x document")
+
+    if curate:
+        _curate_paths(doc)
 
     prefix = "/" + strip_segment.strip().strip("/") if strip_segment.strip() else ""
 
@@ -73,3 +81,28 @@ def build_actions_spec(
         raise ValueError(f"duplicate operationIds: {duplicates}")
 
     return doc
+
+
+def _curate_paths(doc: dict[str, Any]) -> None:
+    """Keep only curated operations; drop operations and now-empty path items."""
+    all_ids = {
+        op["operationId"]
+        for item in doc.get("paths", {}).values()
+        for method, op in item.items()
+        if method in _METHODS and isinstance(op, dict) and op.get("operationId")
+    }
+    missing = unknown_curated_ids(all_ids)
+    if missing:
+        raise ValueError(f"curated operationIds not found in the spec: {sorted(missing)}")
+
+    kept_paths: dict[str, Any] = {}
+    for path, item in doc.get("paths", {}).items():
+        for method in list(item):
+            op = item[method]
+            if method in _METHODS and isinstance(op, dict):
+                if op.get("operationId") not in CURATED_OPERATION_IDS:
+                    del item[method]
+        # Keep the path only if it still has at least one operation.
+        if any(m in _METHODS for m in item):
+            kept_paths[path] = item
+    doc["paths"] = kept_paths

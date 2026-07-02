@@ -5,8 +5,8 @@
 # lives there so it can be linted, type-checked, and unit-tested.
 #
 # Usage:
-#   scripts/build-gemini-functions.sh
-#   IN=openapi/verifyax.yaml OUT=gemini/verifyax-functions.json scripts/build-gemini-functions.sh
+#   scripts/build-gemini-functions.sh              # curated (default)
+#   FULL=1 OUT=gemini/verifyax-functions.full.json scripts/build-gemini-functions.sh   # full 46 ops
 set -euo pipefail
 
 IN="${IN:-openapi/verifyax.yaml}"

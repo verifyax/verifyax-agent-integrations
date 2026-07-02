@@ -5,8 +5,8 @@
 # lives there so it can be linted, type-checked, and unit-tested.
 #
 # Usage:
-#   scripts/build-openai-actions.sh
-#   IN=openapi/verifyax.yaml OUT=openai/verifyax-actions.yaml scripts/build-openai-actions.sh
+#   scripts/build-openai-actions.sh                 # curated (default)
+#   FULL=1 OUT=openai/verifyax-actions.full.yaml scripts/build-openai-actions.sh   # full 46 ops
 set -euo pipefail
 
 IN="${IN:-openapi/verifyax.yaml}"

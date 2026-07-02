@@ -22,12 +22,18 @@ def _load(path: str) -> dict:
         return yaml.safe_load(handle)
 
 
+def _curate() -> bool:
+    # Default: the curated intent-aligned surface. FULL=1 opts into all 46 ops.
+    return os.environ.get("FULL", "").strip().lower() not in ("1", "true", "yes")
+
+
 def _openai() -> None:
     mirror = _load(os.environ["IN_PATH"])
     spec = build_actions_spec(
         mirror,
         server_url=os.environ["SERVER_URL"],
         strip_segment=os.environ.get("STRIP_PREFIX", "v1"),
+        curate=_curate(),
     )
     with open(os.environ["OUT_PATH"], "w", encoding="utf-8") as handle:
         yaml.safe_dump(spec, handle, sort_keys=False, allow_unicode=True, width=100)
@@ -42,7 +48,7 @@ def _openai() -> None:
 
 def _gemini() -> None:
     mirror = _load(os.environ["IN_PATH"])
-    decls, warnings = build_function_declarations(mirror)
+    decls, warnings = build_function_declarations(mirror, curate=_curate())
     blob = json.dumps(decls, indent=2, ensure_ascii=False)
     if "$ref" in blob:
         raise SystemExit("error: unresolved $ref remains in output")
