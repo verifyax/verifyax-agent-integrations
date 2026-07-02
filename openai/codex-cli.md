@@ -11,17 +11,24 @@ Add the server to `~/.codex/config.toml`:
 ```toml
 [mcp_servers.verifyax]
 command = "npx"
-args = ["-y", "@verifyax/mcp-server"]
+args = ["-y", "@verifyax/mcp-server@0.2.1"]
 env = { VERIFYAX_API_KEY = "sk-ver-api-..." }
 ```
 
 Requires Node.js ≥ 20. The server logs to stderr only; set `VERIFYAX_MCP_LOG_LEVEL`
 (`debug` | `info` | `warn` | `error` | `silent`, default `info`) in `env` to adjust verbosity.
 
-Equivalently, register it from the command line:
+> **Pin the version.** The examples pin `@verifyax/mcp-server@0.2.1` for reproducibility; bump it
+> deliberately. `npx -y @verifyax/mcp-server` (unpinned) would auto-run whatever `latest` resolves to.
+>
+> **Handle your key as a secret.** Don't commit `~/.codex/config.toml` with a real key. Prefer
+> sourcing it from the environment — e.g. `VERIFYAX_API_KEY = "${VERIFYAX_API_KEY}"` — or your OS
+> secret store, and never paste it into a chat.
+
+Equivalently, register it from the command line (reads the key from your environment):
 
 ```bash
-codex mcp add verifyax --env VERIFYAX_API_KEY=sk-ver-api-... -- npx -y @verifyax/mcp-server
+codex mcp add verifyax --env VERIFYAX_API_KEY="$VERIFYAX_API_KEY" -- npx -y @verifyax/mcp-server@0.2.1
 ```
 
 ## Verify

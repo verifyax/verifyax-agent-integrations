@@ -13,13 +13,16 @@ import yaml
 from verifyax_transforms import build_actions_spec, build_function_declarations
 from verifyax_transforms.curate import CURATED_OPERATION_IDS
 from verifyax_transforms.gemini import _simplify
+from verifyax_transforms.provenance import source_meta
 
 _ALL_OPERATIONS = 46
 _SENSITIVE = {"createOneTimeLoginToken", "listAuditLogs", "getUsageEvent", "retryJob"}
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MIRROR = yaml.safe_load((ROOT / "openapi" / "verifyax.yaml").read_text(encoding="utf-8"))
+MIRROR_BYTES = (ROOT / "openapi" / "verifyax.yaml").read_bytes()
+MIRROR = yaml.safe_load(MIRROR_BYTES)
 SERVER_URL = "https://console.verifyax.com/api/v1"
+_CURATED_META = source_meta(MIRROR_BYTES, MIRROR, curated=True)
 
 
 # --- Gemini simplify: the constructs that used to break (BUILD-6, BUILD-3) ---
@@ -145,7 +148,7 @@ def test_openai_sets_absolute_server_and_strips_prefix():
 
 
 def test_openai_matches_committed_artifact():
-    built = build_actions_spec(MIRROR, SERVER_URL, "v1")
+    built = build_actions_spec(MIRROR, SERVER_URL, "v1", source_meta=_CURATED_META)
     committed = yaml.safe_load((ROOT / "openai" / "verifyax-actions.yaml").read_text(encoding="utf-8"))
     assert built == committed, "openai/verifyax-actions.yaml is stale — re-run build-openai-actions.sh"
 
@@ -154,6 +157,23 @@ def test_gemini_matches_committed_artifact():
     built, _ = build_function_declarations(MIRROR)
     committed = json.loads((ROOT / "gemini" / "verifyax-functions.json").read_text(encoding="utf-8"))
     assert built == committed, "gemini/verifyax-functions.json is stale — re-run build-gemini-functions.sh"
+
+
+# --- Provenance (ARCH-3) ---
+
+
+def test_openai_carries_source_provenance():
+    committed = yaml.safe_load((ROOT / "openai" / "verifyax-actions.yaml").read_text(encoding="utf-8"))
+    prov = committed["info"]["x-verifyax-source"]
+    assert prov["spec_version"] == str(MIRROR["info"]["version"])
+    assert prov["spec_sha256"] == _CURATED_META["spec_sha256"]  # not stale vs the mirror
+    assert prov["surface"] == "curated"
+
+
+def test_gemini_sidecar_matches_mirror():
+    meta = json.loads((ROOT / "gemini" / "verifyax-functions.meta.json").read_text(encoding="utf-8"))
+    assert meta["spec_sha256"] == _CURATED_META["spec_sha256"]
+    assert meta["declaration_count"] == len(CURATED_OPERATION_IDS)
 
 
 # --- Curation (ARCH-1, SEC-3) ---
