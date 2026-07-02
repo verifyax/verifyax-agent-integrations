@@ -25,17 +25,22 @@ def build_actions_spec(
     server_url: str,
     strip_segment: str = "v1",
     curate: bool = True,
+    source_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return a new GPT Actions-compatible spec derived from `mirror` (unmutated).
 
     When `curate` is true (default) only the intent-aligned operation set is kept
-    (see curate.py); pass false for the full-surface opt-in build."""
+    (see curate.py); pass false for the full-surface opt-in build. `source_meta`
+    (see provenance.py) is stamped into `info.x-verifyax-source` when given."""
     doc = copy.deepcopy(mirror)
     if not str(doc.get("openapi", "")).startswith("3"):
         raise ValueError("input is not an OpenAPI 3.x document")
 
     if curate:
         _curate_paths(doc)
+
+    if source_meta is not None:
+        doc.setdefault("info", {})["x-verifyax-source"] = source_meta
 
     prefix = "/" + strip_segment.strip().strip("/") if strip_segment.strip() else ""
 

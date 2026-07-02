@@ -89,7 +89,7 @@ jobs:
 
       - name: Commit drift
         run: |
-          paths="openapi/verifyax.yaml openai/verifyax-actions.yaml gemini/verifyax-functions.json"
+          paths="openapi/verifyax.yaml openai/verifyax-actions.yaml gemini/verifyax-functions.json gemini/verifyax-functions.meta.json"
           if git diff --quiet -- $paths; then
             echo "No spec changes — nothing to commit."
             exit 0

@@ -23,7 +23,7 @@ settings (`~/.gemini/settings.json` for all projects, or `.gemini/settings.json`
   "mcpServers": {
     "verifyax": {
       "command": "npx",
-      "args": ["-y", "@verifyax/mcp-server"],
+      "args": ["-y", "@verifyax/mcp-server@0.2.1"],
       "env": {
         "VERIFYAX_API_KEY": "sk-ver-api-..."
       }
@@ -34,6 +34,10 @@ settings (`~/.gemini/settings.json` for all projects, or `.gemini/settings.json`
 
 Requires Node.js ≥ 20. The server logs to stderr only; set `VERIFYAX_MCP_LOG_LEVEL`
 (`debug` | `info` | `warn` | `error` | `silent`, default `info`) to adjust verbosity.
+
+> **Pin the version** (`@verifyax/mcp-server@0.2.1`) for reproducibility rather than unpinned
+> `latest`; bump it deliberately. **Treat the key as a secret** — don't commit a settings file
+> containing a real key; prefer an environment variable / secret store and never paste it into a chat.
 
 ### Remote (Streamable HTTP)
 
