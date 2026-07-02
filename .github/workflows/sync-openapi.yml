@@ -2,38 +2,74 @@ name: Sync OpenAPI spec
 
 # Pull-based sync of the VerifyAX Gateway public OpenAPI spec, plus a rebuild of
 # the provider artifacts derived from it (OpenAI Actions, Gemini functions).
-# Runs on GitHub-hosted runners (open internet), so it can reach the gateway.
-# Commits the mirror + regenerated artifacts directly to the default branch when
-# they change, keeping derived files from going stale behind the mirror.
 #
-# Direct-commit (not a PR) on purpose: org policy disables "Allow GitHub Actions
-# to create and approve pull requests", so the default GITHUB_TOKEN can't open
-# PRs. Pushing needs only `contents: write`, which a workflow can grant itself
-# regardless of that setting.
+# The mirror + regenerated artifacts are committed directly to the default branch
+# ONLY after passing a gate: a diff-magnitude guard (catches a truncated or
+# wholesale upstream change), the transform tests, and a Redocly lint of the
+# derived spec. On any failure the workflow opens/updates a tracking issue and
+# commits nothing.
+#
+# Direct-commit (not a PR) on purpose: org policy disables Actions opening PRs;
+# pushing needs only `contents: write`.
 
 on:
   schedule:
     - cron: "17 6 * * *" # daily ~06:17 UTC (off the :00 mark on purpose)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Bypass the diff-magnitude guard (for a legitimate large upstream change)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  issues: write # open a tracking issue when the sync fails
+
+concurrency:
+  group: sync-openapi
+  cancel-in-progress: false # never interrupt a commit/push mid-flight
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
 
       - name: Install pinned dependencies
         run: pip install -r requirements.txt
 
       - name: Sync spec from gateway
         run: scripts/sync-openapi.sh
+
+      - name: Diff-magnitude guard
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          old=$(git show HEAD:openapi/verifyax.yaml 2>/dev/null | wc -l || echo 0)
+          new=$(wc -l < openapi/verifyax.yaml)
+          echo "mirror lines: old=$old new=$new"
+          if [ "$old" -gt 0 ] && [ "${FORCE:-false}" != "true" ]; then
+            if [ "$new" -lt $((old / 2)) ]; then
+              echo "::error::Mirror shrank from $old to $new lines (>50%) — possible truncation. Re-run with force=true if this is real."
+              exit 1
+            fi
+            changed=$(git diff --numstat -- openapi/verifyax.yaml | awk '{print $1+$2}')
+            changed=${changed:-0}
+            if [ "$changed" -gt $((old * 6 / 10)) ]; then
+              echo "::error::Mirror changed by $changed lines (>60% of $old) — wholesale change. Re-run with force=true if this is real."
+              exit 1
+            fi
+          fi
 
       - name: Extract spec version
         id: ver
@@ -45,6 +81,11 @@ jobs:
         run: |
           scripts/build-openai-actions.sh
           scripts/build-gemini-functions.sh
+
+      - name: Validate (transform tests + lint the derived spec)
+        run: |
+          python -m pytest tests/ -q
+          npx --yes @redocly/cli@1 lint openai/verifyax-actions.yaml
 
       - name: Commit drift
         run: |
@@ -58,3 +99,17 @@ jobs:
           git add $paths
           git commit -m "Sync OpenAPI spec + rebuild provider artifacts (gateway v${{ steps.ver.outputs.version }})"
           git push
+
+      - name: Open a tracking issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body=$(printf 'The scheduled OpenAPI sync failed and committed nothing.\n\nRun: %s\n\nLikely causes: gateway unreachable, the diff-magnitude guard tripped (truncated/wholesale change — re-run with force=true if legitimate), or the derived spec failed validation.' "$RUN_URL")
+          existing=$(gh issue list --state open --search 'OpenAPI sync failed in:title' --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title 'OpenAPI sync failed' --body "$body"
+          fi

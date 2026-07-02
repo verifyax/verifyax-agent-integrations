@@ -10,7 +10,7 @@
 # transform it. Provider-specific massaging (GPT Actions single-server/operationId
 # rules, Gemini function declarations) belongs in the openai/ and gemini/ build
 # steps, so the mirror stays a clean 1:1 of the gateway contract and drift is easy
-# to read in the sync PR.
+# to read in the sync commit.
 #
 # Usage:
 #   scripts/sync-openapi.sh

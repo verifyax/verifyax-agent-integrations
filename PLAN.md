@@ -47,7 +47,8 @@ no-code surfaces (GPT Actions, Gemini function calling).
    gemini/). Apache-2.0 LICENSE.
 2. **OpenAPI sync (pull)** — verify `scripts/sync-openapi.sh` fetches & validates the gateway
    spec; run it once to commit the first `openapi/verifyax.yaml`; confirm the scheduled workflow
-   opens a drift PR. (Push-based `repository_dispatch` from the API repo is a later add-on.)
+   commits drift directly after its validation gate passes. (Push-based `repository_dispatch` from
+   the API repo is a later add-on.)
 3. **MCP registries (highest leverage, helps all ecosystems)** — submit `@verifyax/mcp-server`
    to the official MCP registry + smithery.ai + mcp.so. Needs the MCP server's source repo +
    a `server.json`.
@@ -89,7 +90,7 @@ verifyax-agent-integrations/
 ├── README.md
 ├── PLAN.md                         (this file)
 ├── scripts/sync-openapi.sh         (pull + validate the gateway spec → openapi/verifyax.yaml)
-├── .github/workflows/sync-openapi.yml  (daily + manual; opens a drift PR)
+├── .github/workflows/sync-openapi.yml  (daily + manual; validates then commits drift)
 ├── openapi/                        (mirror lands here)
 ├── openai/                         (GPT Actions config — TODO)
 └── gemini/                         (Gemini CLI docs — TODO)
