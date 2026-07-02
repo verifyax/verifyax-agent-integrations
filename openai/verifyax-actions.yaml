@@ -2278,6 +2278,14 @@ components:
           type: string
           nullable: true
           description: Optional notes stored with the agent.
+        user_uuid:
+          type: string
+          format: uuid
+          description: Creating user UUID (tenant context).
+        workspace_uuid:
+          type: string
+          format: uuid
+          description: Owning workspace UUID.
         agent_url:
           type: string
           format: uri
@@ -2382,6 +2390,14 @@ components:
           type: string
           nullable: true
           description: Optional description shown in UI and APIs.
+        user_uuid:
+          type: string
+          format: uuid
+          description: Creating user UUID (tenant context).
+        workspace_uuid:
+          type: string
+          format: uuid
+          description: Owning workspace UUID.
         corpus_uuid:
           type: string
           format: uuid
@@ -2512,6 +2528,14 @@ components:
           description: 'Job classifier (e.g. scenario_creation, ENGINE, evaluation, simulation).
 
             '
+        user_uuid:
+          type: string
+          format: uuid
+          description: User that triggered or owns the job record.
+        workspace_uuid:
+          type: string
+          format: uuid
+          description: Workspace scope for the job.
         current_status:
           type: string
           description: 'Job lifecycle status. Poll until `COMPLETED`, `FAILED`, or `CANCELLED`. Values:
@@ -2567,6 +2591,10 @@ components:
         job_type:
           type: string
           description: Upstream evaluation job type discriminator.
+        user_uuid:
+          type: string
+          format: uuid
+          description: User associated with the evaluation job record.
         current_status:
           type: string
           description: 'Evaluation job lifecycle status (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`,
@@ -2609,6 +2637,14 @@ components:
           type: string
           format: uuid
           description: Verification run UUID (`simulation_uuid` in engine responses).
+        user_uuid:
+          type: string
+          format: uuid
+          description: User that owns or initiated the run.
+        workspace_uuid:
+          type: string
+          format: uuid
+          description: Workspace scope for the run.
         scenario_uuid:
           type: string
           format: uuid
@@ -2751,6 +2787,10 @@ components:
           type: string
           format: uuid
           description: Parent verification run UUID this evaluation scores.
+        user_uuid:
+          type: string
+          format: uuid
+          description: User that owns the evaluation job record.
         current_status:
           type: string
           description: Evaluation worker status string.
@@ -3026,6 +3066,8 @@ components:
         '
       required:
       - mode
+      - organization_uuid
+      - workspace_uuid
       properties:
         mode:
           type: string
@@ -3033,6 +3075,14 @@ components:
           - scenario_run
           - scenario_generation
           description: Select run-cost estimate vs scenario batch-generation estimate.
+        organization_uuid:
+          type: string
+          format: uuid
+          description: Organisation scope (overwritten from API key by the gateway).
+        workspace_uuid:
+          type: string
+          format: uuid
+          description: Workspace scope (overwritten from API key by the gateway).
         scenario_uuid:
           type: string
           format: uuid
@@ -3251,6 +3301,18 @@ components:
           type: string
           format: uuid
           description: Usage event UUID.
+        organization_uuid:
+          type: string
+          format: uuid
+          description: Organisation that incurred the spend.
+        user_uuid:
+          type: string
+          format: uuid
+          description: User attributed on the event (often the API key user).
+        workspace_uuid:
+          type: string
+          format: uuid
+          description: Workspace attributed on the event.
         product_area:
           type: string
           description: High-level product or pipeline area code (ENGINE, SCENARIO_CREATION, …).
