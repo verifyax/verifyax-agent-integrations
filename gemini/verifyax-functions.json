@@ -40,7 +40,7 @@
   },
   {
     "name": "generateScenario",
-    "description": "Queues LLM scenario_creation work. Returns the environment row (`uuid`, not `scenario_uuid`) plus `job_uuid`. When num_scenarios is greater than 1, creates a batch (`batch_uuid`, `batch_scenario_uuids`) and requires `tag_pool`. Runs a billing credit preflight before enqueueing (**402** when balance is insufficient, **502** when billing is unreachable). Tenant UUIDs are injected by the gateway from the API key. Use the returned `uuid` as the `scenario_uuid` path parameter on `/v1/scenarios/{scenario_uuid}/...`.\n",
+    "description": "Queues LLM scenario_creation work. Returns the scenario row (`uuid`, not `scenario_uuid`) plus `job_uuid`. When num_scenarios is greater than 1, creates a batch (`batch_uuid`, `batch_scenario_uuids`) and requires `tag_pool`. Runs a billing credit preflight before enqueueing (**402** when balance is insufficient, **502** when billing is unreachable). Tenant UUIDs are injected by the gateway from the API key. Use the returned `uuid` as the `scenario_uuid` path parameter on `/v1/scenarios/{scenario_uuid}/...`.\n",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -62,7 +62,7 @@
         },
         "tags": {
           "type": "ARRAY",
-          "description": "Explicit skill tag `name` values from GET /web/api/v1/tags. At most 5 (info_exchange) or 2 (interview). Each tag's `allowed_scenario_types` must include your `scenario_type`. Invalid tags fail on the async job, not synchronously.",
+          "description": "Explicit skill tag `name` values from GET /v1/tags. At most 5 (info_exchange) or 2 (interview). Each tag's `allowed_scenario_types` must include your `scenario_type`. Invalid tags fail on the async job, not synchronously.",
           "items": {
             "type": "STRING"
           }
@@ -108,7 +108,7 @@
       "properties": {
         "scenario_uuid": {
           "type": "STRING",
-          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+          "description": "UUID of a scenario in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
         }
       },
       "required": [
@@ -118,13 +118,13 @@
   },
   {
     "name": "getScenarioJob",
-    "description": "Returns all non-deleted jobs for the environment (newest first), including `scenario_creation` and other job types.\n",
+    "description": "Returns all non-deleted jobs for the scenario (newest first), including `scenario_creation` and other job types.\n",
     "parameters": {
       "type": "OBJECT",
       "properties": {
         "scenario_uuid": {
           "type": "STRING",
-          "description": "UUID of a simulation environment in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
+          "description": "UUID of a scenario in the authenticated workspace. Use the `uuid` field from scenario create, generate, list, or get responses (not a response field named `scenario_uuid`).\n"
         }
       },
       "required": [
@@ -156,7 +156,14 @@
       "properties": {
         "agent_type": {
           "type": "STRING",
-          "description": "Filter by communication protocol (`A2A` or `API`)."
+          "enum": [
+            "A2A",
+            "API",
+            "DIRECTLINE",
+            "EXTENSION",
+            "MCP"
+          ],
+          "description": "Filter by connector type (`A2A`, `API`, `DIRECTLINE`, `EXTENSION`, `MCP`)."
         },
         "limit": {
           "type": "INTEGER",
@@ -171,7 +178,7 @@
   },
   {
     "name": "createAgent",
-    "description": "Registers an agent endpoint (A2A, API, etc.) for use in simulations and tests.",
+    "description": "Registers an agent endpoint (A2A, API, Direct Line, etc.) for use in simulations and tests.",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -185,20 +192,22 @@
         },
         "agent_url": {
           "type": "STRING",
-          "description": "Base URL for A2A/API agents, or connection entrypoint as required by agent_type."
+          "description": "Endpoint URL VerifyAX calls. For A2A/API agents, your deployment URL. For `DIRECTLINE`, the regional Direct Line host (see `DirectlineAgentParameters.region`).\n"
         },
         "agent_type": {
           "type": "STRING",
-          "description": "Communication protocol (`A2A` or `API`). Defaults to `A2A`.",
+          "description": "Connector type. Use `DIRECTLINE` for Microsoft Copilot Studio over Bot Framework Direct Line 3.0. Defaults to `A2A`.\n",
           "enum": [
             "A2A",
             "API",
-            "EXTENSION"
+            "DIRECTLINE",
+            "EXTENSION",
+            "MCP"
           ]
         },
         "agent_parameters": {
           "type": "OBJECT",
-          "description": "Connector-specific settings (timeouts, headers, tools, auth hints, etc.). Shape depends on agent_type; see product docs for supported keys.\n"
+          "description": "Connector-specific settings. For `DIRECTLINE`, include a `directline` object (see `DirectlineAgentParameters`). A2A/API agents use auth, timeout, and card keys documented in the Connect Agents guide.\n"
         }
       },
       "required": [
@@ -293,7 +302,7 @@
         },
         "scenario_uuid": {
           "type": "STRING",
-          "description": "Required when `mode` is `scenario_run` — target simulation environment (the scenario row’s `uuid` from create or generate, passed here as `scenario_uuid`).\n"
+          "description": "Required when `mode` is `scenario_run` — target scenario (the scenario row’s `uuid` from create or generate, passed here as `scenario_uuid`).\n"
         },
         "num_runs": {
           "type": "INTEGER",
@@ -326,11 +335,11 @@
       "properties": {
         "scenario_uuid": {
           "type": "STRING",
-          "description": "Single scenario simulation environment to run against — the scenario row’s `uuid` from create or generate responses.\n"
+          "description": "Single scenario to run against — the scenario row’s `uuid` from create or generate responses.\n"
         },
-        "environment_uuids": {
+        "scenario_uuids": {
           "type": "ARRAY",
-          "description": "Ordered list of scenario environments to run in one request. Mutually exclusive with `environment_uuid`; must contain at least one UUID when used.\n",
+          "description": "Ordered list of scenario UUIDs to run in one request. Mutually exclusive with `scenario_uuid`; must contain at least one UUID when used.\n",
           "items": {
             "type": "STRING"
           }
@@ -351,10 +360,7 @@
           "type": "INTEGER",
           "description": "Optional wall-clock budget in minutes for this verification run. Overrides simulation_config.timeout_minutes in the scenario definition for billing and playground execution. Workbench UI presets 5–60 min."
         }
-      },
-      "required": [
-        "scenario_uuid"
-      ]
+      }
     }
   },
   {
@@ -399,7 +405,7 @@
         },
         "run_group_uuid": {
           "type": "STRING",
-          "description": "Return runs that belong to this batched / multi-environment run group UUID."
+          "description": "Return runs that belong to this batched / multi-scenario run group UUID."
         },
         "date_from": {
           "type": "STRING",
@@ -507,7 +513,7 @@
         },
         "scenario_uuid": {
           "type": "STRING",
-          "description": "Filter usage events or other lists to this simulation environment UUID."
+          "description": "Filter usage events or other lists to this scenario UUID."
         },
         "simulation_job_uuid": {
           "type": "STRING",
