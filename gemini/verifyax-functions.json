@@ -50,7 +50,7 @@
         },
         "scenario_type": {
           "type": "STRING",
-          "description": "Multi-agent `info_exchange` (default) or 1-to-1 `interview`. Controls tag caps and NPC layout.",
+          "description": "Multi-agent `info_exchange` (default) or 1-on-1 `interview`. Controls tag caps and NPC layout.",
           "enum": [
             "info_exchange",
             "interview"
@@ -92,6 +92,42 @@
         "max_tags_per_npc": {
           "type": "INTEGER",
           "description": "Batch only; caps tags per NPC. NPC count = ceil(total_tags / max_tags_per_npc). Ignored for interview (single NPC). Worker default 1 when omitted."
+        },
+        "objective_steps": {
+          "type": "ARRAY",
+          "description": "Advanced; interview scenarios with num_scenarios=1 and explicit tags only. Author-supplied NPC objective steps used verbatim and in order instead of the generated objective queue, giving deterministic control over the NPC's beat ordering. Gated by a server-side feature flag; rejected when the flag is disabled.",
+          "items": {
+            "type": "OBJECT",
+            "properties": {
+              "description": {
+                "type": "STRING",
+                "description": "Step objective narrative."
+              },
+              "personality": {
+                "type": "STRING",
+                "description": "NPC personality for this step; defaults to the generated NPC personality when omitted."
+              },
+              "context": {
+                "type": "STRING",
+                "description": "Additional context for this step. Should instruct the NPC when to emit the completion marker; the step advances on the marker or on max_rounds_per_objective."
+              },
+              "max_rounds_per_objective": {
+                "type": "INTEGER",
+                "description": "Max rounds for this step before force-advancing."
+              },
+              "tags": {
+                "type": "ARRAY",
+                "description": "Tags for this step.",
+                "items": {
+                  "type": "STRING"
+                }
+              }
+            },
+            "required": [
+              "description",
+              "context"
+            ]
+          }
         }
       },
       "required": [
@@ -481,7 +517,7 @@
   },
   {
     "name": "listUsageEvents",
-    "description": "Lists billing or analytics usage events with filters for product area, related resource IDs, and pagination.",
+    "description": "Lists usage telemetry events (LiteLLM/compute USD actuals) with filters for product area, related resource IDs, and pagination.",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -501,7 +537,7 @@
         "event_start_to": {
           "type": "STRING",
           "format": "date-time",
-          "description": "Upper bound on usage event start timestamp (inclusive)."
+          "description": "Upper bound on usage event start timestamp (exclusive — events with `event_start_timestamp` equal to this value are excluded)."
         },
         "simulation_uuid": {
           "type": "STRING",
