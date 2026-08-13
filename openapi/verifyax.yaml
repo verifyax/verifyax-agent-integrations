@@ -3948,6 +3948,7 @@ components:
             - practice_run_failed
             - server_error
             - unexpected_error
+            - lifecycle_blocked
         connection:
           $ref: "#/components/schemas/ConnectionTestStepStatus"
         agent_card:
