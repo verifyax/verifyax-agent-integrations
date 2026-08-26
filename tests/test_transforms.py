@@ -15,7 +15,7 @@ from verifyax_transforms.curate import CURATED_OPERATION_IDS
 from verifyax_transforms.gemini import _simplify
 from verifyax_transforms.provenance import source_meta
 
-_ALL_OPERATIONS = 54
+_ALL_OPERATIONS = 55
 _SENSITIVE = {"createOneTimeLoginToken", "listAuditLogs", "getUsageEvent", "retryJob"}
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent

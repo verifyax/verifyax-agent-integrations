@@ -51,6 +51,8 @@ tags:
       `scenario_type` before calling generate.
   - name: Client Tags
     description: Register organization-specific QnA skill tags for interview scenarios.
+  - name: Devices
+    description: Enroll client device signing keys so installers can sign artifact uploads.
 security:
   - BearerApiKeyAuth: []
 paths:
@@ -118,6 +120,59 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: The user account associated with the API key was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+
+  /v1/devices/enroll:
+    post:
+      tags: [Devices]
+      summary: Enroll a signing device
+      description: >
+        Registers a client device's public signing key so the device can sign artifact uploads.
+        The installer authenticates with its workspace API key and presents a one-time
+        `enrollmentCode` minted from a logged-in Workbench session. The gateway verifies the code,
+        cross-checks that it belongs to the API key's organization, derives the RFC 7638 JWK
+        thumbprint (`jkt`) and signature algorithm, then registers the device. Only OKP (Ed25519,
+        `EdDSA`) and EC (P-256, `ES256`) public keys are accepted.
+      operationId: enrollDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceEnrollRequest"
+      responses:
+        "201":
+          description: Device enrolled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceEnrollResponse"
+        "400":
+          description: Missing body fields, invalid or expired enrollment code, or unsupported public key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Enrollment code belongs to a different organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: >
+            The public key belongs to a revoked device, which is never reactivated. Enroll again
+            with a newly generated key; the one-time code is restored and stays usable. Re-sending
+            a key that is still active is not a conflict — it returns the existing enrollment.
           content:
             application/json:
               schema:
@@ -2474,6 +2529,49 @@ components:
           type: string
           format: date-time
           description: Creation timestamp.
+
+    DeviceEnrollRequest:
+      type: object
+      description: Body for `POST /v1/devices/enroll`. Organization, workspace, and user context are derived from the API key and the enrollment code, not the body.
+      required: [publicKey, enrollmentCode]
+      properties:
+        publicKey:
+          description: >
+            Device public key as a JWK, supplied as either a JSON object or a JSON string. Must be an OKP Ed25519 key or an EC P-256 key; anything else is rejected. Only the canonical key form and its thumbprint are stored.
+          oneOf:
+            - type: object
+            - type: string
+        enrollmentCode:
+          type: string
+          description: One-time enrollment code minted from a logged-in Workbench session.
+        label:
+          type: string
+          description: Optional human-readable device label.
+
+    DeviceEnrollResponse:
+      type: object
+      description: Envelope returned after a device signing key is enrolled.
+      properties:
+        success:
+          type: boolean
+          description: True when the device was registered.
+        device:
+          type: object
+          properties:
+            id:
+              type: string
+              description: Device identifier.
+            jkt:
+              type: string
+              description: RFC 7638 JWK SHA-256 thumbprint (base64url); the stable device fingerprint.
+            alg:
+              type: string
+              enum: [EdDSA, ES256]
+              description: Signature algorithm derived from the key type.
+            expiresAt:
+              type: string
+              format: date-time
+              description: ISO 8601 timestamp when the enrollment expires.
 
     ScenarioCreateRequest:
       type: object
