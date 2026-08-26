@@ -47,7 +47,7 @@ def build_actions_spec(
     # 1. Single absolute server; fold the prefix out of the path keys.
     doc["servers"] = [{"url": server_url, "description": "VerifyAX Gateway public API"}]
     new_paths: dict[str, Any] = {}
-    for path, item in doc.get("paths", {}).items():
+    for path, item in sorted(doc.get("paths", {}).items()):
         key = path[len(prefix):] or "/" if prefix and path.startswith(prefix) else path
         if key in new_paths:
             raise ValueError(f"path collision after stripping prefix: {key}")
@@ -101,7 +101,7 @@ def _curate_paths(doc: dict[str, Any]) -> None:
         raise ValueError(f"curated operationIds not found in the spec: {sorted(missing)}")
 
     kept_paths: dict[str, Any] = {}
-    for path, item in doc.get("paths", {}).items():
+    for path, item in sorted(doc.get("paths", {}).items()):
         for method in list(item):
             op = item[method]
             if method in _METHODS and isinstance(op, dict):

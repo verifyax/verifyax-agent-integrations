@@ -60,8 +60,8 @@ def build_function_declarations(
         if missing:
             raise ValueError(f"curated operationIds not found in the spec: {sorted(missing)}")
 
-    for path, item in mirror.get("paths", {}).items():
-        for method, op in item.items():
+    for path, item in sorted(mirror.get("paths", {}).items()):
+        for method, op in sorted(item.items()):
             if method not in _METHODS or not op.get("operationId"):
                 continue
             name = op["operationId"]

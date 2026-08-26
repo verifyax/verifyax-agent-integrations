@@ -1,5 +1,252 @@
 [
   {
+    "name": "listAgents",
+    "description": "Lists agents registered in the workspace with optional type filter and pagination.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "agent_type": {
+          "type": "STRING",
+          "enum": [
+            "A2A",
+            "API",
+            "DIRECTLINE",
+            "EXTENSION",
+            "MCP"
+          ],
+          "description": "Filter by connector type (`A2A`, `API`, `DIRECTLINE`, `EXTENSION`, `MCP`)."
+        },
+        "limit": {
+          "type": "INTEGER",
+          "description": "Maximum number of records to return (pagination page size)."
+        },
+        "offset": {
+          "type": "INTEGER",
+          "description": "Number of records to skip from the beginning of the sorted result set."
+        }
+      }
+    }
+  },
+  {
+    "name": "createAgent",
+    "description": "Registers an agent endpoint (A2A, API, Direct Line, etc.) for use in simulations and tests.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "name": {
+          "type": "STRING",
+          "description": "Display name for the registered agent. Must be unique within the workspace; if the requested name is taken, the server assigns the next available suffix (e.g. My Agent (1))."
+        },
+        "description": {
+          "type": "STRING",
+          "description": "Optional notes about the agent’s role or integration."
+        },
+        "agent_url": {
+          "type": "STRING",
+          "description": "Endpoint URL VerifyAX calls. For A2A/API agents, your deployment URL. For `DIRECTLINE`, the regional Direct Line host (see `DirectlineAgentParameters.region`).\n"
+        },
+        "agent_type": {
+          "type": "STRING",
+          "description": "Connector type. Use `DIRECTLINE` for Microsoft Copilot Studio over Bot Framework Direct Line 3.0. Defaults to `A2A`.\n",
+          "enum": [
+            "A2A",
+            "API",
+            "DIRECTLINE",
+            "EXTENSION",
+            "MCP"
+          ]
+        },
+        "agent_parameters": {
+          "type": "OBJECT",
+          "description": "Connector-specific settings. For `DIRECTLINE`, include a `directline` object (see `DirectlineAgentParameters`). A2A/API agents use auth, timeout, and card keys documented in the Connect Agents guide.\n"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "testAgentCard",
+    "description": "Validates connectivity by fetching an A2A-style agent card URL through the gateway connector.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "agent_url": {
+          "type": "STRING",
+          "description": "Absolute URL of the `.well-known` agent card or root to fetch.",
+          "nullable": true
+        },
+        "agent_type": {
+          "type": "STRING",
+          "description": "Connector hint; defaults to A2A card discovery semantics."
+        },
+        "agent_parameters": {
+          "type": "OBJECT",
+          "description": "Optional extra parameters passed to the connector (timeouts, headers, etc.).",
+          "nullable": true
+        }
+      }
+    }
+  },
+  {
+    "name": "testRestAgent",
+    "description": "Sends a configurable HTTP request to a REST agent and returns the proxied response for debugging.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "url": {
+          "type": "STRING",
+          "description": "Fully qualified URL to invoke (method applied as given)."
+        },
+        "method": {
+          "type": "STRING",
+          "description": "HTTP verb (GET, POST, PUT, PATCH, DELETE, …)."
+        },
+        "headers": {
+          "type": "OBJECT",
+          "description": "Outbound request headers (e.g. Authorization, Content-Type)."
+        },
+        "body": {
+          "type": "OBJECT",
+          "description": "Optional JSON object body for non-GET calls; arbitrary keys are forwarded upstream."
+        },
+        "timeout": {
+          "type": "NUMBER",
+          "description": "Per-request timeout in seconds enforced server-side."
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "deleteAgent",
+    "description": "Removes the agent from the workspace registry.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "UUID of a registered workspace agent."
+        }
+      },
+      "required": [
+        "agent_uuid"
+      ]
+    }
+  },
+  {
+    "name": "triggerEvaluation",
+    "description": "Queues evaluation for a simulation run in `COMPLETED` status. Skip this if you set `evaluate_on_complete` on the trigger call.\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "simulation_uuid": {
+          "type": "STRING",
+          "description": "Verification run to evaluate (`simulation_uuid` from the run record)."
+        }
+      },
+      "required": [
+        "simulation_uuid"
+      ]
+    }
+  },
+  {
+    "name": "simulateScenario",
+    "description": "Starts a scenario simulation; supports evaluate_on_complete and multiple runs.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "Single scenario to run against — the scenario row’s `uuid` from create or generate responses.\n"
+        },
+        "scenario_uuids": {
+          "type": "ARRAY",
+          "description": "Ordered list of scenario UUIDs to run in one request. Mutually exclusive with `scenario_uuid`; must contain at least one UUID when used.\n",
+          "items": {
+            "type": "STRING"
+          }
+        },
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "Registered workspace agent to exercise. The gateway resolves URL, connector strategy, and auth from this agent before starting the simulation.\n"
+        },
+        "evaluate_on_complete": {
+          "type": "BOOLEAN",
+          "description": "When true, queue evaluation automatically after the run completes successfully."
+        },
+        "num_runs": {
+          "type": "INTEGER",
+          "description": "Number of parallel runs for robustness. Defaults to 1."
+        },
+        "timeout_minutes": {
+          "type": "INTEGER",
+          "description": "Optional wall-clock budget in minutes for this verification run. Overrides simulation_config.timeout_minutes in the scenario definition for billing and playground execution. Workbench UI presets 5–60 min."
+        }
+      }
+    }
+  },
+  {
+    "name": "previewWorkspaceCredits",
+    "description": "Unified credit preview: organisation balance, pending ENGINE verification runs and scenario_creation jobs (with stored estimates), and either `newRunEstimatedCredits` (`mode: scenario_run`) or `newGenerationEstimatedCredits` (`mode: scenario_generation`). The estimate field that does not apply is `null`. Tenant UUIDs in the body are overwritten by the gateway from the API key (see API overview).\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "mode": {
+          "type": "STRING",
+          "description": "Select run-cost estimate vs scenario batch-generation estimate.",
+          "enum": [
+            "scenario_run",
+            "scenario_generation"
+          ]
+        },
+        "scenario_uuid": {
+          "type": "STRING",
+          "description": "Required when `mode` is `scenario_run` — target scenario (the scenario row’s `uuid` from create or generate, passed here as `scenario_uuid`).\n"
+        },
+        "num_runs": {
+          "type": "INTEGER",
+          "description": "Required when `mode` is `scenario_run` — number of planned runs to price."
+        },
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "Optional agent hint for run-cost estimates (registry agent UUID).",
+          "nullable": true
+        },
+        "timeout_minutes": {
+          "type": "INTEGER",
+          "description": "scenario_run: overrides simulation_config.timeout_minutes for the credit estimate. scenario_generation: generation time budget (mirrors scenario create). Omit for defaults."
+        },
+        "num_scenarios": {
+          "type": "INTEGER",
+          "description": "Required when `mode` is `scenario_generation` — number of scenario creates to price."
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    }
+  },
+  {
+    "name": "getJob",
+    "description": "Returns one job by UUID — current status, progress, and error details.",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "job_uuid": {
+          "type": "STRING",
+          "description": "UUID of an async job (creation, engine, evaluation, etc.) in the workspace."
+        }
+      },
+      "required": [
+        "job_uuid"
+      ]
+    }
+  },
+  {
     "name": "listScenarios",
     "description": "Lists scenario rows with optional `scenario_type`, `status`, `limit`, and `offset` filters. Default `limit` upstream is 100 (max 1000).\n",
     "parameters": {
@@ -169,253 +416,6 @@
     }
   },
   {
-    "name": "getJob",
-    "description": "Returns one job by UUID — current status, progress, and error details.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "job_uuid": {
-          "type": "STRING",
-          "description": "UUID of an async job (creation, engine, evaluation, etc.) in the workspace."
-        }
-      },
-      "required": [
-        "job_uuid"
-      ]
-    }
-  },
-  {
-    "name": "listAgents",
-    "description": "Lists agents registered in the workspace with optional type filter and pagination.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "agent_type": {
-          "type": "STRING",
-          "enum": [
-            "A2A",
-            "API",
-            "DIRECTLINE",
-            "EXTENSION",
-            "MCP"
-          ],
-          "description": "Filter by connector type (`A2A`, `API`, `DIRECTLINE`, `EXTENSION`, `MCP`)."
-        },
-        "limit": {
-          "type": "INTEGER",
-          "description": "Maximum number of records to return (pagination page size)."
-        },
-        "offset": {
-          "type": "INTEGER",
-          "description": "Number of records to skip from the beginning of the sorted result set."
-        }
-      }
-    }
-  },
-  {
-    "name": "createAgent",
-    "description": "Registers an agent endpoint (A2A, API, Direct Line, etc.) for use in simulations and tests.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "name": {
-          "type": "STRING",
-          "description": "Display name for the registered agent. Must be unique within the workspace; if the requested name is taken, the server assigns the next available suffix (e.g. My Agent (1))."
-        },
-        "description": {
-          "type": "STRING",
-          "description": "Optional notes about the agent’s role or integration."
-        },
-        "agent_url": {
-          "type": "STRING",
-          "description": "Endpoint URL VerifyAX calls. For A2A/API agents, your deployment URL. For `DIRECTLINE`, the regional Direct Line host (see `DirectlineAgentParameters.region`).\n"
-        },
-        "agent_type": {
-          "type": "STRING",
-          "description": "Connector type. Use `DIRECTLINE` for Microsoft Copilot Studio over Bot Framework Direct Line 3.0. Defaults to `A2A`.\n",
-          "enum": [
-            "A2A",
-            "API",
-            "DIRECTLINE",
-            "EXTENSION",
-            "MCP"
-          ]
-        },
-        "agent_parameters": {
-          "type": "OBJECT",
-          "description": "Connector-specific settings. For `DIRECTLINE`, include a `directline` object (see `DirectlineAgentParameters`). A2A/API agents use auth, timeout, and card keys documented in the Connect Agents guide.\n"
-        }
-      },
-      "required": [
-        "name"
-      ]
-    }
-  },
-  {
-    "name": "deleteAgent",
-    "description": "Removes the agent from the workspace registry.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "agent_uuid": {
-          "type": "STRING",
-          "description": "UUID of a registered workspace agent."
-        }
-      },
-      "required": [
-        "agent_uuid"
-      ]
-    }
-  },
-  {
-    "name": "testAgentCard",
-    "description": "Validates connectivity by fetching an A2A-style agent card URL through the gateway connector.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "agent_url": {
-          "type": "STRING",
-          "description": "Absolute URL of the `.well-known` agent card or root to fetch.",
-          "nullable": true
-        },
-        "agent_type": {
-          "type": "STRING",
-          "description": "Connector hint; defaults to A2A card discovery semantics."
-        },
-        "agent_parameters": {
-          "type": "OBJECT",
-          "description": "Optional extra parameters passed to the connector (timeouts, headers, etc.).",
-          "nullable": true
-        }
-      }
-    }
-  },
-  {
-    "name": "testRestAgent",
-    "description": "Sends a configurable HTTP request to a REST agent and returns the proxied response for debugging.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "url": {
-          "type": "STRING",
-          "description": "Fully qualified URL to invoke (method applied as given)."
-        },
-        "method": {
-          "type": "STRING",
-          "description": "HTTP verb (GET, POST, PUT, PATCH, DELETE, …)."
-        },
-        "headers": {
-          "type": "OBJECT",
-          "description": "Outbound request headers (e.g. Authorization, Content-Type)."
-        },
-        "body": {
-          "type": "OBJECT",
-          "description": "Optional JSON object body for non-GET calls; arbitrary keys are forwarded upstream."
-        },
-        "timeout": {
-          "type": "NUMBER",
-          "description": "Per-request timeout in seconds enforced server-side."
-        }
-      },
-      "required": [
-        "url"
-      ]
-    }
-  },
-  {
-    "name": "previewWorkspaceCredits",
-    "description": "Unified credit preview: organisation balance, pending ENGINE verification runs and scenario_creation jobs (with stored estimates), and either `newRunEstimatedCredits` (`mode: scenario_run`) or `newGenerationEstimatedCredits` (`mode: scenario_generation`). The estimate field that does not apply is `null`. Tenant UUIDs in the body are overwritten by the gateway from the API key (see API overview).\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "mode": {
-          "type": "STRING",
-          "description": "Select run-cost estimate vs scenario batch-generation estimate.",
-          "enum": [
-            "scenario_run",
-            "scenario_generation"
-          ]
-        },
-        "scenario_uuid": {
-          "type": "STRING",
-          "description": "Required when `mode` is `scenario_run` — target scenario (the scenario row’s `uuid` from create or generate, passed here as `scenario_uuid`).\n"
-        },
-        "num_runs": {
-          "type": "INTEGER",
-          "description": "Required when `mode` is `scenario_run` — number of planned runs to price."
-        },
-        "agent_uuid": {
-          "type": "STRING",
-          "description": "Optional agent hint for run-cost estimates (registry agent UUID).",
-          "nullable": true
-        },
-        "timeout_minutes": {
-          "type": "INTEGER",
-          "description": "scenario_run: overrides simulation_config.timeout_minutes for the credit estimate. scenario_generation: generation time budget (mirrors scenario create). Omit for defaults."
-        },
-        "num_scenarios": {
-          "type": "INTEGER",
-          "description": "Required when `mode` is `scenario_generation` — number of scenario creates to price."
-        }
-      },
-      "required": [
-        "mode"
-      ]
-    }
-  },
-  {
-    "name": "simulateScenario",
-    "description": "Starts a scenario simulation; supports evaluate_on_complete and multiple runs.",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "scenario_uuid": {
-          "type": "STRING",
-          "description": "Single scenario to run against — the scenario row’s `uuid` from create or generate responses.\n"
-        },
-        "scenario_uuids": {
-          "type": "ARRAY",
-          "description": "Ordered list of scenario UUIDs to run in one request. Mutually exclusive with `scenario_uuid`; must contain at least one UUID when used.\n",
-          "items": {
-            "type": "STRING"
-          }
-        },
-        "agent_uuid": {
-          "type": "STRING",
-          "description": "Registered workspace agent to exercise. The gateway resolves URL, connector strategy, and auth from this agent before starting the simulation.\n"
-        },
-        "evaluate_on_complete": {
-          "type": "BOOLEAN",
-          "description": "When true, queue evaluation automatically after the run completes successfully."
-        },
-        "num_runs": {
-          "type": "INTEGER",
-          "description": "Number of parallel runs for robustness. Defaults to 1."
-        },
-        "timeout_minutes": {
-          "type": "INTEGER",
-          "description": "Optional wall-clock budget in minutes for this verification run. Overrides simulation_config.timeout_minutes in the scenario definition for billing and playground execution. Workbench UI presets 5–60 min."
-        }
-      }
-    }
-  },
-  {
-    "name": "triggerEvaluation",
-    "description": "Queues evaluation for a simulation run in `COMPLETED` status. Skip this if you set `evaluate_on_complete` on the trigger call.\n",
-    "parameters": {
-      "type": "OBJECT",
-      "properties": {
-        "simulation_uuid": {
-          "type": "STRING",
-          "description": "Verification run to evaluate (`simulation_uuid` from the run record)."
-        }
-      },
-      "required": [
-        "simulation_uuid"
-      ]
-    }
-  },
-  {
     "name": "listSimulations",
     "description": "Paginated simulation search with rich filters (status, dates, run group, evaluation flags).",
     "parameters": {
@@ -516,6 +516,10 @@
     }
   },
   {
+    "name": "listSkillTags",
+    "description": "Returns the scenario skill tag catalogue used by scenario generation, as a bare JSON array. The organization is derived from your API key, so the response is the global catalogue merged with your organization's custom tag overlay. Custom (org-scoped) tags are flagged with `custom: true`; global tags carry `custom: false`.\nBefore `POST /v1/scenarios/generate`, filter for tags whose `allowed_scenario_types` includes your `scenario_type`. Tag existence and compatibility are validated asynchronously by the `scenario_creation` worker, so invalid tags yield **201** then a **FAILED** job, not a synchronous **400**.\n"
+  },
+  {
     "name": "listUsageEvents",
     "description": "Lists usage telemetry events (LiteLLM/compute USD actuals) with filters for product area, related resource IDs, and pagination.",
     "parameters": {
@@ -569,9 +573,5 @@
         }
       }
     }
-  },
-  {
-    "name": "listSkillTags",
-    "description": "Returns the scenario skill tag catalogue used by scenario generation, as a bare JSON array. The organization is derived from your API key, so the response is the global catalogue merged with your organization's custom tag overlay. Custom (org-scoped) tags are flagged with `custom: true`; global tags carry `custom: false`.\nBefore `POST /v1/scenarios/generate`, filter for tags whose `allowed_scenario_types` includes your `scenario_type`. Tag existence and compatibility are validated asynchronously by the `scenario_creation` worker, so invalid tags yield **201** then a **FAILED** job, not a synchronous **400**.\n"
   }
 ]

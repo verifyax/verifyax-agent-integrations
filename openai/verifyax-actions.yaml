@@ -59,6 +59,348 @@ tags:
 security:
 - BearerApiKeyAuth: []
 paths:
+  /agents:
+    get:
+      tags:
+      - Agents
+      summary: List agents
+      description: Lists agents registered in the workspace with optional type filter and pagination.
+      operationId: listAgents
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      - $ref: '#/components/parameters/AgentType'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: List agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AgentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+    post:
+      tags:
+      - Agents
+      summary: Create agent
+      description: Registers an agent endpoint (A2A, API, Direct Line, etc.) for use in simulations and
+        tests.
+      operationId: createAgent
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentCreateRequest'
+            examples:
+              a2a:
+                summary: A2A agent
+                value:
+                  name: Support Agent
+                  description: Agent for handling customer support requests
+                  agent_url: https://agent.example.com/api
+                  agent_type: A2A
+                  agent_parameters:
+                    auth_method: bearer
+                    token: sk-example-token-min-10-chars
+                    timeout: 15000
+              directline:
+                summary: Copilot Studio (Direct Line)
+                description: 'Set `agent_url` from `directline.region` (see DirectlineAgentParameters).
+                  Store the Direct Line secret under `agent_parameters.directline.secret`.
+
+                  '
+                value:
+                  name: Copilot Studio Support Bot
+                  description: Microsoft Copilot Studio agent over Direct Line 3.0
+                  agent_url: https://directline.botframework.com
+                  agent_type: DIRECTLINE
+                  agent_parameters:
+                    directline:
+                      secret: <direct-line-secret-from-copilot-studio>
+                      region: global
+                    include_full_scenario: first_only
+                    include_message_history: false
+      responses:
+        '200':
+          description: Agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+  /agents/tests/agent-card:
+    post:
+      tags:
+      - Agents
+      summary: Test fetch agent card via proxy connector
+      description: Validates connectivity by fetching an A2A-style agent card URL through the gateway
+        connector.
+      operationId: testAgentCard
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FetchAgentCardRequest'
+            example:
+              agent_url: https://example.com/.well-known/agent.json
+              agent_type: A2A
+      responses:
+        '200':
+          $ref: '#/components/responses/ProxySuccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+  /agents/tests/api-agent-test:
+    post:
+      tags:
+      - Agents
+      summary: Test REST agent endpoint
+      description: Sends a configurable HTTP request to a REST agent and returns the proxied response
+        for debugging.
+      operationId: testRestAgent
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestRestAgentRequest'
+            example:
+              url: https://example.com/agent/test
+              method: POST
+              headers:
+                Authorization: Bearer replace-with-token
+              body:
+                message: Hello from API docs test
+              timeout: 10.0
+      responses:
+        '200':
+          $ref: '#/components/responses/ProxySuccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+  /agents/{agent_uuid}:
+    delete:
+      tags:
+      - Agents
+      summary: Delete agent by UUID
+      description: Removes the agent from the workspace registry.
+      operationId: deleteAgent
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      - $ref: '#/components/parameters/AgentUuid'
+      responses:
+        '200':
+          $ref: '#/components/responses/ProxySuccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+  /engine/evaluate/trigger:
+    post:
+      tags:
+      - Engine
+      summary: Trigger evaluation
+      description: 'Queues evaluation for a simulation run in `COMPLETED` status. Skip this if you set
+        `evaluate_on_complete` on the trigger call.
+
+        '
+      operationId: triggerEvaluation
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EngineEvaluateTriggerRequest'
+            example:
+              simulation_uuid: 00000000-0000-0000-0000-000000000003
+      responses:
+        '200':
+          description: Evaluation triggered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerEvaluationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+  /engine/simulate/scenario:
+    post:
+      tags:
+      - Engine
+      summary: Trigger scenario simulation
+      description: Starts a scenario simulation; supports evaluate_on_complete and multiple runs.
+      operationId: simulateScenario
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EngineInterrogateScenarioRequest'
+            example:
+              scenario_uuid: 00000000-0000-0000-0000-000000000001
+              agent_uuid: 00000000-0000-0000-0000-000000000002
+              evaluate_on_complete: true
+              num_runs: 1
+              timeout_minutes: 30
+      responses:
+        '200':
+          description: Simulation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartSimulationResponse'
+              example:
+                job_uuid: 11111111-1111-1111-1111-111111111111
+                simulation_uuid: 22222222-2222-2222-2222-222222222222
+                evaluation_job_uuid: null
+                status: dispatched
+                message: Scenario simulation task(s) dispatched successfully (1 run(s))
+                simulation_uuids:
+                - 22222222-2222-2222-2222-222222222222
+                run_group_uuid: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: 'Scenario row exists but its `scenario.json` artifact has not been uploaded yet
+            (see issue #2370). Use `POST /v1/scenarios/generate` to create a fully-formed scenario.
+
+            '
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioDefinitionMissingError'
+              example:
+                detail:
+                  error: scenario_definition_missing
+                  message: Scenario has no definition uploaded. Use POST /v1/scenarios/generate to create
+                    a fully-formed scenario.
+                  scenario_uuid: 00000000-0000-0000-0000-000000000001
+                  scenario_path: orgs/<org>/scenarios/<scenario>/scenario.json
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+  /engine/workspace-credit-preview:
+    post:
+      tags:
+      - Engine
+      summary: Preview workspace credits (scenario run or scenario generation)
+      description: 'Unified credit preview: organisation balance, pending ENGINE verification runs and
+        scenario_creation jobs (with stored estimates), and either `newRunEstimatedCredits` (`mode: scenario_run`)
+        or `newGenerationEstimatedCredits` (`mode: scenario_generation`). The estimate field that does
+        not apply is `null`. Tenant UUIDs in the body are overwritten by the gateway from the API key
+        (see API overview).
+
+        '
+      operationId: previewWorkspaceCredits
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreditPreviewRequest'
+            examples:
+              scenario_run:
+                summary: Scenario run estimate
+                description: Tenant UUIDs optional — gateway injects them from the API key.
+                value:
+                  mode: scenario_run
+                  organization_uuid: 00000000-0000-0000-0000-000000000010
+                  workspace_uuid: 00000000-0000-0000-0000-000000000020
+                  scenario_uuid: 00000000-0000-0000-0000-000000000001
+                  num_runs: 2
+                  timeout_minutes: 30
+              scenario_generation:
+                summary: Scenario generation estimate
+                description: Tenant UUIDs optional — gateway injects them from the API key.
+                value:
+                  mode: scenario_generation
+                  num_scenarios: 3
+      responses:
+        '200':
+          description: Credit preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditPreviewResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: 'Scenario row exists but its `scenario.json` artifact has not been uploaded yet
+            (see issue #2370). Use `POST /v1/scenarios/generate` to create a fully-formed scenario.
+
+            '
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioDefinitionMissingError'
+              example:
+                detail:
+                  error: scenario_definition_missing
+                  message: Scenario has no definition uploaded. Use POST /v1/scenarios/generate to create
+                    a fully-formed scenario.
+                  scenario_uuid: 00000000-0000-0000-0000-000000000001
+                  scenario_path: orgs/<org>/scenarios/<scenario>/scenario.json
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+  /jobs/{job_uuid}:
+    get:
+      tags:
+      - Jobs
+      summary: Get job by UUID
+      description: Returns one job by UUID — current status, progress, and error details.
+      operationId: getJob
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      - $ref: '#/components/parameters/JobUuid'
+      responses:
+        '200':
+          $ref: '#/components/responses/ProxySuccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
   /scenarios:
     get:
       tags:
@@ -247,348 +589,6 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/GatewayError'
-  /jobs/{job_uuid}:
-    get:
-      tags:
-      - Jobs
-      summary: Get job by UUID
-      description: Returns one job by UUID — current status, progress, and error details.
-      operationId: getJob
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      - $ref: '#/components/parameters/JobUuid'
-      responses:
-        '200':
-          $ref: '#/components/responses/ProxySuccess'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
-  /agents:
-    get:
-      tags:
-      - Agents
-      summary: List agents
-      description: Lists agents registered in the workspace with optional type filter and pagination.
-      operationId: listAgents
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      - $ref: '#/components/parameters/AgentType'
-      - $ref: '#/components/parameters/Limit'
-      - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: List agents
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/AgentResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
-    post:
-      tags:
-      - Agents
-      summary: Create agent
-      description: Registers an agent endpoint (A2A, API, Direct Line, etc.) for use in simulations and
-        tests.
-      operationId: createAgent
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AgentCreateRequest'
-            examples:
-              a2a:
-                summary: A2A agent
-                value:
-                  name: Support Agent
-                  description: Agent for handling customer support requests
-                  agent_url: https://agent.example.com/api
-                  agent_type: A2A
-                  agent_parameters:
-                    auth_method: bearer
-                    token: sk-example-token-min-10-chars
-                    timeout: 15000
-              directline:
-                summary: Copilot Studio (Direct Line)
-                description: 'Set `agent_url` from `directline.region` (see DirectlineAgentParameters).
-                  Store the Direct Line secret under `agent_parameters.directline.secret`.
-
-                  '
-                value:
-                  name: Copilot Studio Support Bot
-                  description: Microsoft Copilot Studio agent over Direct Line 3.0
-                  agent_url: https://directline.botframework.com
-                  agent_type: DIRECTLINE
-                  agent_parameters:
-                    directline:
-                      secret: <direct-line-secret-from-copilot-studio>
-                      region: global
-                    include_full_scenario: first_only
-                    include_message_history: false
-      responses:
-        '200':
-          description: Agent
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
-  /agents/{agent_uuid}:
-    delete:
-      tags:
-      - Agents
-      summary: Delete agent by UUID
-      description: Removes the agent from the workspace registry.
-      operationId: deleteAgent
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      - $ref: '#/components/parameters/AgentUuid'
-      responses:
-        '200':
-          $ref: '#/components/responses/ProxySuccess'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
-  /agents/tests/agent-card:
-    post:
-      tags:
-      - Agents
-      summary: Test fetch agent card via proxy connector
-      description: Validates connectivity by fetching an A2A-style agent card URL through the gateway
-        connector.
-      operationId: testAgentCard
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FetchAgentCardRequest'
-            example:
-              agent_url: https://example.com/.well-known/agent.json
-              agent_type: A2A
-      responses:
-        '200':
-          $ref: '#/components/responses/ProxySuccess'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
-  /agents/tests/api-agent-test:
-    post:
-      tags:
-      - Agents
-      summary: Test REST agent endpoint
-      description: Sends a configurable HTTP request to a REST agent and returns the proxied response
-        for debugging.
-      operationId: testRestAgent
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TestRestAgentRequest'
-            example:
-              url: https://example.com/agent/test
-              method: POST
-              headers:
-                Authorization: Bearer replace-with-token
-              body:
-                message: Hello from API docs test
-              timeout: 10.0
-      responses:
-        '200':
-          $ref: '#/components/responses/ProxySuccess'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
-  /engine/workspace-credit-preview:
-    post:
-      tags:
-      - Engine
-      summary: Preview workspace credits (scenario run or scenario generation)
-      description: 'Unified credit preview: organisation balance, pending ENGINE verification runs and
-        scenario_creation jobs (with stored estimates), and either `newRunEstimatedCredits` (`mode: scenario_run`)
-        or `newGenerationEstimatedCredits` (`mode: scenario_generation`). The estimate field that does
-        not apply is `null`. Tenant UUIDs in the body are overwritten by the gateway from the API key
-        (see API overview).
-
-        '
-      operationId: previewWorkspaceCredits
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreditPreviewRequest'
-            examples:
-              scenario_run:
-                summary: Scenario run estimate
-                description: Tenant UUIDs optional — gateway injects them from the API key.
-                value:
-                  mode: scenario_run
-                  organization_uuid: 00000000-0000-0000-0000-000000000010
-                  workspace_uuid: 00000000-0000-0000-0000-000000000020
-                  scenario_uuid: 00000000-0000-0000-0000-000000000001
-                  num_runs: 2
-                  timeout_minutes: 30
-              scenario_generation:
-                summary: Scenario generation estimate
-                description: Tenant UUIDs optional — gateway injects them from the API key.
-                value:
-                  mode: scenario_generation
-                  num_scenarios: 3
-      responses:
-        '200':
-          description: Credit preview
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreditPreviewResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '409':
-          description: 'Scenario row exists but its `scenario.json` artifact has not been uploaded yet
-            (see issue #2370). Use `POST /v1/scenarios/generate` to create a fully-formed scenario.
-
-            '
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ScenarioDefinitionMissingError'
-              example:
-                detail:
-                  error: scenario_definition_missing
-                  message: Scenario has no definition uploaded. Use POST /v1/scenarios/generate to create
-                    a fully-formed scenario.
-                  scenario_uuid: 00000000-0000-0000-0000-000000000001
-                  scenario_path: orgs/<org>/scenarios/<scenario>/scenario.json
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
-  /engine/simulate/scenario:
-    post:
-      tags:
-      - Engine
-      summary: Trigger scenario simulation
-      description: Starts a scenario simulation; supports evaluate_on_complete and multiple runs.
-      operationId: simulateScenario
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EngineInterrogateScenarioRequest'
-            example:
-              scenario_uuid: 00000000-0000-0000-0000-000000000001
-              agent_uuid: 00000000-0000-0000-0000-000000000002
-              evaluate_on_complete: true
-              num_runs: 1
-              timeout_minutes: 30
-      responses:
-        '200':
-          description: Simulation started
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StartSimulationResponse'
-              example:
-                job_uuid: 11111111-1111-1111-1111-111111111111
-                simulation_uuid: 22222222-2222-2222-2222-222222222222
-                evaluation_job_uuid: null
-                status: dispatched
-                message: Scenario simulation task(s) dispatched successfully (1 run(s))
-                simulation_uuids:
-                - 22222222-2222-2222-2222-222222222222
-                run_group_uuid: null
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '409':
-          description: 'Scenario row exists but its `scenario.json` artifact has not been uploaded yet
-            (see issue #2370). Use `POST /v1/scenarios/generate` to create a fully-formed scenario.
-
-            '
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ScenarioDefinitionMissingError'
-              example:
-                detail:
-                  error: scenario_definition_missing
-                  message: Scenario has no definition uploaded. Use POST /v1/scenarios/generate to create
-                    a fully-formed scenario.
-                  scenario_uuid: 00000000-0000-0000-0000-000000000001
-                  scenario_path: orgs/<org>/scenarios/<scenario>/scenario.json
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
-  /engine/evaluate/trigger:
-    post:
-      tags:
-      - Engine
-      summary: Trigger evaluation
-      description: 'Queues evaluation for a simulation run in `COMPLETED` status. Skip this if you set
-        `evaluate_on_complete` on the trigger call.
-
-        '
-      operationId: triggerEvaluation
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EngineEvaluateTriggerRequest'
-            example:
-              simulation_uuid: 00000000-0000-0000-0000-000000000003
-      responses:
-        '200':
-          description: Evaluation triggered
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TriggerEvaluationResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
   /simulations:
     get:
       tags:
@@ -677,42 +677,6 @@ paths:
                 $ref: '#/components/schemas/SimulationDetailResponse'
         '429':
           $ref: '#/components/responses/TooManyRequests'
-  /usage/events:
-    get:
-      tags:
-      - Usage
-      summary: List usage events
-      description: Lists usage telemetry events (LiteLLM/compute USD actuals) with filters for product
-        area, related resource IDs, and pagination.
-      operationId: listUsageEvents
-      parameters:
-      - $ref: '#/components/parameters/XRequestId'
-      - $ref: '#/components/parameters/ProductArea'
-      - $ref: '#/components/parameters/Failed'
-      - $ref: '#/components/parameters/EventStartFrom'
-      - $ref: '#/components/parameters/EventStartTo'
-      - $ref: '#/components/parameters/SimulationUuidQueryOptional'
-      - $ref: '#/components/parameters/JobUuidQueryOptional'
-      - $ref: '#/components/parameters/ScenarioUuidQueryOptional'
-      - $ref: '#/components/parameters/SimulationJobUuid'
-      - $ref: '#/components/parameters/EvaluationJobUuid'
-      - $ref: '#/components/parameters/Limit'
-      - $ref: '#/components/parameters/Offset'
-      responses:
-        '200':
-          description: Usage events
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/UsageEventResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/GatewayError'
   /tags:
     get:
       tags:
@@ -769,6 +733,42 @@ paths:
                     type: string
                   statusCode:
                     type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+  /usage/events:
+    get:
+      tags:
+      - Usage
+      summary: List usage events
+      description: Lists usage telemetry events (LiteLLM/compute USD actuals) with filters for product
+        area, related resource IDs, and pagination.
+      operationId: listUsageEvents
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      - $ref: '#/components/parameters/ProductArea'
+      - $ref: '#/components/parameters/Failed'
+      - $ref: '#/components/parameters/EventStartFrom'
+      - $ref: '#/components/parameters/EventStartTo'
+      - $ref: '#/components/parameters/SimulationUuidQueryOptional'
+      - $ref: '#/components/parameters/JobUuidQueryOptional'
+      - $ref: '#/components/parameters/ScenarioUuidQueryOptional'
+      - $ref: '#/components/parameters/SimulationJobUuid'
+      - $ref: '#/components/parameters/EvaluationJobUuid'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Usage events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UsageEventResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
