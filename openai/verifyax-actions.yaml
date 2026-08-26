@@ -22,7 +22,7 @@ info:
   x-verifyax-source:
     source: https://console.verifyax.com/openapi.yaml
     spec_version: 1.0.0
-    spec_sha256: bb72f5866ea3031636a16282aa7a955c3a794ec0f2a43b424f583bd06d51e16b
+    spec_sha256: e849ba187add0e9b1f937868799b01cf3bc0fd05a4cda0fe0189ef644e6cdbc3
     surface: curated
 servers:
 - url: https://console.verifyax.com/api/v1
@@ -56,6 +56,8 @@ tags:
     '
 - name: Client Tags
   description: Register organization-specific QnA skill tags for interview scenarios.
+- name: Devices
+  description: Enroll client device signing keys so installers can sign artifact uploads.
 security:
 - BearerApiKeyAuth: []
 paths:
@@ -1296,6 +1298,55 @@ components:
           type: string
           format: date-time
           description: Creation timestamp.
+    DeviceEnrollRequest:
+      type: object
+      description: Body for `POST /v1/devices/enroll`. Organization, workspace, and user context are derived
+        from the API key and the enrollment code, not the body.
+      required:
+      - publicKey
+      - enrollmentCode
+      properties:
+        publicKey:
+          description: 'Device public key as a JWK, supplied as either a JSON object or a JSON string.
+            Must be an OKP Ed25519 key or an EC P-256 key; anything else is rejected. Only the canonical
+            key form and its thumbprint are stored.
+
+            '
+          oneOf:
+          - type: object
+          - type: string
+        enrollmentCode:
+          type: string
+          description: One-time enrollment code minted from a logged-in Workbench session.
+        label:
+          type: string
+          description: Optional human-readable device label.
+    DeviceEnrollResponse:
+      type: object
+      description: Envelope returned after a device signing key is enrolled.
+      properties:
+        success:
+          type: boolean
+          description: True when the device was registered.
+        device:
+          type: object
+          properties:
+            id:
+              type: string
+              description: Device identifier.
+            jkt:
+              type: string
+              description: RFC 7638 JWK SHA-256 thumbprint (base64url); the stable device fingerprint.
+            alg:
+              type: string
+              enum:
+              - EdDSA
+              - ES256
+              description: Signature algorithm derived from the key type.
+            expiresAt:
+              type: string
+              format: date-time
+              description: ISO 8601 timestamp when the enrollment expires.
     ScenarioCreateRequest:
       type: object
       description: 'Body for `POST /v1/scenarios` (synchronous shell). `scenario_type` is optional (`info_exchange`
