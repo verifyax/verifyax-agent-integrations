@@ -45,10 +45,17 @@ scripts/build-openai-actions.sh    # regenerate the GPT Actions spec
 scripts/build-gemini-functions.sh  # regenerate the Gemini function declarations
 ```
 
-A scheduled GitHub Action (`.github/workflows/sync-openapi.yml`) runs all three daily and commits
-the mirror **plus** the regenerated artifacts whenever the gateway spec changes — so the derived
-files never lag the contract. Lint the OpenAPI specs with `npx @redocly/cli lint` (config in
-[`redocly.yaml`](redocly.yaml)).
+A scheduled GitHub Action (`.github/workflows/sync-openapi.yml`) runs all three daily and opens or
+updates a bot pull request when the gateway spec changes. The pull request includes a semantic
+operation diff and must pass CI and maintainer review before the external input reaches `main`.
+Run the pinned provider checks with `npm test` (config in [`redocly.yaml`](redocly.yaml)).
+
+## Distribution contract
+
+`main` is the supported, continuously updated distribution channel for these text artifacts.
+GitHub Releases are historical snapshots only and are not presented as the current download
+channel. Every generated artifact carries source-version and SHA-256 provenance so consumers can
+pin a repository commit and verify which gateway contract produced it.
 
 ## Layout
 

@@ -1,0 +1,25 @@
+{
+  "name": "verifyax-agent-integrations",
+  "private": true,
+  "description": "Locked validation toolchain for VerifyAX provider artifacts",
+  "scripts": {
+    "lint:openai": "redocly lint openai/verifyax-actions.yaml",
+    "test:gemini": "tsc --noEmit && node --experimental-strip-types tests/provider-acceptance.ts",
+    "test": "npm run lint:openai && npm run test:gemini"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/verifyax/verifyax-agent-integrations.git"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/verifyax/verifyax-agent-integrations/issues"
+  },
+  "homepage": "https://github.com/verifyax/verifyax-agent-integrations#readme",
+  "devDependencies": {
+    "@google/genai": "2.21.0",
+    "@redocly/cli": "2.51.2",
+    "typescript": "7.0.2"
+  }
+}
