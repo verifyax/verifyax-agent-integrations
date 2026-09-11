@@ -21,6 +21,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write # open a tracking issue when the sync fails
+  actions: write # dispatch CI onto the bot branch (GITHUB_TOKEN PRs skip pull_request)
 
 concurrency:
   group: sync-openapi
@@ -122,7 +123,12 @@ jobs:
           git fetch origin "$BRANCH:refs/remotes/origin/$BRANCH" || true
           git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"
 
-          pr_number=$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number')
+          # GITHUB_TOKEN git push does not start on.push CI. workflow_dispatch is
+          # an explicit exception and attaches the CI check to the bot-branch SHA.
+          gh workflow run CI --ref "$BRANCH"
+
+          first_id() { jq -r '.[0].number // empty'; }
+          pr_number=$(gh pr list --state open --head "$BRANCH" --json number | first_id)
           if [ -n "$pr_number" ]; then
             gh pr edit "$pr_number" \
               --title "Sync OpenAPI spec (gateway v${{ steps.ver.outputs.version }})" \
@@ -138,7 +144,7 @@ jobs:
               cp "$RUNNER_TEMP/sync-pr-body.md" "$fallback_body"
               printf '\n\nGitHub Actions could not create a PR. A maintainer must review and promote the bot branch using [this compare view](%s).\n' \
                 "$compare_url" >> "$fallback_body"
-              issue_number=$(gh issue list --state open --search 'OpenAPI sync awaiting promotion in:title' --json number --jq '.[0].number')
+              issue_number=$(gh issue list --state open --search 'OpenAPI sync awaiting promotion in:title' --json number | first_id)
               if [ -n "$issue_number" ]; then
                 gh issue edit "$issue_number" --body-file "$fallback_body"
               else
@@ -154,7 +160,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           body=$(printf 'The scheduled OpenAPI sync failed and did not update its pull request.\n\nRun: %s\n\nLikely causes: gateway unreachable, the diff-magnitude guard tripped (truncated/wholesale change — re-run with force=true if legitimate), or validation failed.' "$RUN_URL")
-          existing=$(gh issue list --state open --search 'OpenAPI sync failed in:title' --json number --jq '.[0].number')
+          existing=$(gh issue list --state open --search 'OpenAPI sync failed in:title' --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
           else

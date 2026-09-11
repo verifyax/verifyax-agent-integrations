@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # GITHUB_TOKEN pushes/PRs do not start workflows; the OpenAPI sync dispatches
+  # this job onto automation/openapi-sync so the bot PR still gets a CI check.
+  workflow_dispatch:
 
 permissions:
   contents: read
