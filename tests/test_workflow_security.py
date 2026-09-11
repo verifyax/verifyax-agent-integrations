@@ -22,3 +22,17 @@ def test_scheduled_sync_cannot_push_to_main():
     assert "BRANCH: automation/openapi-sync" in workflow
     assert 'git push --force-with-lease origin "HEAD:refs/heads/$BRANCH"' in workflow
     assert "git push origin HEAD:main" not in workflow
+
+
+def test_empty_gh_lists_are_not_treated_as_ids():
+    workflow = (WORKFLOWS / "sync-openapi.yml").read_text(encoding="utf-8")
+
+    assert "'.[0].number'" not in workflow
+    assert ".[0].number // empty" in workflow
+    assert 'gh workflow run CI --ref "$BRANCH"' in workflow
+
+
+def test_ci_accepts_workflow_dispatch_for_bot_branch():
+    ci = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+
+    assert "workflow_dispatch:" in ci
