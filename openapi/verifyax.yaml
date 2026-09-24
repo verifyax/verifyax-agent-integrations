@@ -51,6 +51,10 @@ tags:
       `scenario_type` before calling generate.
   - name: Client Tags
     description: Register organization-specific QnA skill tags for interview scenarios.
+  - name: Gold Standards
+    description: >
+      Favorites: a pinned run group that later runs are compared against. `PATCH` moves a Favorite
+      to a newer run without resetting `pinned_at`, so the capability baseline survives a repin.
   - name: Devices
     description: Enroll client device signing keys so installers can sign artifact uploads.
 security:
@@ -232,7 +236,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "429":
@@ -286,7 +290,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -300,7 +304,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -329,7 +333,7 @@ paths:
             example:
               name: Product Return Flow
               scenario_type: interview
-              tags: [anger_deescalation, empathy]
+              tags: [anger_deescalation]
               context_prompt: Customer wants to return a damaged item bought 2 weeks ago
       responses:
         "201":
@@ -353,19 +357,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "409":
           description: Name already exists in workspace
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "422":
           description: Request body failed Pydantic validation (tag caps, batch rules, etc.)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -375,7 +379,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
 
   /v1/scenarios/generate-from-qna:
     post:
@@ -415,7 +419,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -446,13 +450,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "404":
           description: Scenario not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -488,13 +492,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "404":
           description: Scenario not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -519,19 +523,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "404":
           description: Scenario not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "409":
           description: Scenario still has non-deleted simulation runs
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -566,7 +570,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -574,19 +578,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "404":
           description: Scenario not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "409":
           description: Name conflict in workspace
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -619,19 +623,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "404":
           description: Scenario not found, or source scenario.json missing in storage
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "409":
           description: Name conflict in workspace
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -662,13 +666,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "404":
           description: Scenario not found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -700,13 +704,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "404":
           description: definition_bucket_path unset or JSON file missing in storage
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -758,7 +762,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -885,7 +889,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -1161,7 +1165,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "429":
@@ -1232,6 +1236,33 @@ paths:
         "500":
           $ref: "#/components/responses/GatewayError"
 
+  /v1/agents/tests/api-agent-test-copilot-studio:
+    post:
+      tags: [Agents]
+      summary: Test Copilot Studio agent (all auth modes)
+      description: >
+        Probes a Copilot Studio agent using the nested `directline` registration shape.
+        Supports `auth_mode` `secret`, `microsoft` (Entra OBO), and `manual` (custom OAuth).
+        Microsoft and manual modes require `user_token` (end-user Entra access token).
+      operationId: testCopilotStudioAgent
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestCopilotStudioAgentRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/ProxySuccess"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+
   /v1/agents/tests/mcp-connection:
     post:
       tags: [Agents]
@@ -1266,7 +1297,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "429":
@@ -1981,13 +2012,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "422":
           description: Validation error (payload, tag name, or QnA content)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorMessage"
+                $ref: "#/components/schemas/ApiErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -2039,6 +2070,154 @@ paths:
                     type: string
                   statusCode:
                     type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+
+  /v1/gold-standards:
+    get:
+      tags: [Gold Standards]
+      summary: List Favorites
+      description: Lists the workspace's pinned baselines, newest first. Filter by agent to find the Favorite a run should be compared against.
+      operationId: listGoldStandards
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/AgentUuidQueryOptional"
+        - name: include_band
+          in: query
+          description: Compute each Favorite's capability band. Off by default because it reads one stored evaluation per matching run.
+          schema:
+            type: boolean
+            default: false
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Favorites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldStandardsListResponse"
+        "422":
+          description: limit or offset outside the allowed range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+    post:
+      tags: [Gold Standards]
+      summary: Pin a run group as a Favorite
+      description: Pins a completed run group as the baseline for its agent. The run group must be evaluated; its scenarios and agent are read from its members.
+      operationId: createGoldStandard
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoldStandardCreateRequest"
+            examples:
+              batch:
+                summary: Pin a whole run group
+                value:
+                  run_group_uuid: 2c74f6f2-db58-4b2c-9ac0-a9c3d4b86e50
+                  label: Nightly baseline
+      responses:
+        "201":
+          description: Favorite
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldStandardResponse"
+        "400":
+          description: Run group not found, or not usable as a baseline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "409":
+          description: This run is already pinned as a Favorite
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "422":
+          description: Request body failed validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+
+  /v1/gold-standards/{gold_uuid}:
+    patch:
+      tags: [Gold Standards]
+      summary: Move a Favorite to a newer run
+      description: >
+        Repoints an existing Favorite at a newer run group, or renames it. `pinned_at` is not
+        updatable: it is the window deciding which later runs belong to the baseline, so replacing
+        the pin must not discard the runs collected since the Favorite was saved.
+      operationId: updateGoldStandard
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/GoldUuid"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoldStandardUpdateRequest"
+            examples:
+              repin:
+                summary: Point the Favorite at last night's run
+                value:
+                  run_group_uuid: b4b58c09-fce5-48f4-9707-5eeccae786d3
+      responses:
+        "200":
+          description: Favorite
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldStandardResponse"
+        "400":
+          description: New run group not found, or it changes the Favorite between a single run and a batch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Favorite not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "409":
+          description: The target run is already pinned as a Favorite
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "422":
+          description: Request body failed validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "429":
@@ -2349,6 +2528,14 @@ components:
       schema:
         type: string
         format: uuid
+    GoldUuid:
+      name: gold_uuid
+      in: path
+      required: true
+      description: UUID of a Favorite, as returned by `GET /v1/gold-standards`.
+      schema:
+        type: string
+        format: uuid
     SimulationUuid:
       name: simulation_uuid
       in: path
@@ -2407,7 +2594,9 @@ components:
   schemas:
     ErrorMessage:
       type: object
-      description: Generic JSON error envelope from the gateway or upstream when `message` is used.
+      description: >
+        Gateway-generated JSON error. Always includes `message`. Some gateway routes also
+        include `error` or `success`. verifyax-api rejections use ApiErrorResponse instead.
       properties:
         message:
           type: string
@@ -2710,13 +2899,14 @@ components:
           maximum: 5
           description: >-
             Batch only; tags drawn per scenario from tag_pool (default len(tag_pool)).
-            Capped at 5 info_exchange / 2 interview.
+            Capped at 5 info_exchange / 1 interview.
         max_tags_per_npc:
           type: integer
           minimum: 1
+          maximum: 1
           description: >-
-            Batch only; caps tags per NPC. NPC count = ceil(total_tags / max_tags_per_npc).
-            Ignored for interview (single NPC). Worker default 1 when omitted.
+            Batch only; tags per NPC. Must be 1 - every NPC holds exactly one skill tag,
+            so NPC count = total_tags. Ignored for interview (single NPC). Default 1 when omitted.
         objective_steps:
           type: array
           minItems: 1
@@ -2773,32 +2963,52 @@ components:
     DirectlineAgentParameters:
       type: object
       description: >
-        Direct Line 3.0 configuration for Microsoft Copilot Studio agents. Nested under
-        `agent_parameters.directline` on `POST /v1/agents` when `agent_type` is `DIRECTLINE`.
-        Set `agent_url` to the regional Direct Line host derived from `region`.
-      required: [secret, region]
+        Copilot Studio configuration nested under `agent_parameters.directline` when
+        `agent_type` is `DIRECTLINE`. Set `auth_mode` to match the agent's Security
+        settings: `secret` (Direct Line / no authentication), `microsoft` (Entra SSO),
+        or `manual` (custom OAuth).
       properties:
+        auth_mode:
+          type: string
+          enum: [secret, microsoft, manual]
+          default: secret
+          description: Copilot Studio authentication mode.
         secret:
           type: string
           minLength: 1
-          description: >
-            Direct Line secret from Copilot Studio → Channels → Direct Line. Stored on the
-            agent row and used at simulation runtime — never send in the flat test endpoint body
-            after registration.
+          description: Direct Line secret (required when auth_mode is `secret`).
         region:
           type: string
           default: global
           enum: [global, europe, india, unitedstates, asia, australia, northamerica]
-          description: >
-            Direct Line deployment region. Maps to `agent_url`: `global` →
-            `https://directline.botframework.com`; other regions →
-            `https://{region}.directline.botframework.com` (for example `europe` →
-            `https://europe.directline.botframework.com`).
+          description: Direct Line deployment region (secret mode).
+        environment_id:
+          type: string
+          description: Power Platform environment ID (microsoft/manual modes).
+        agent_identifier:
+          type: string
+          description: Copilot Studio agent schema name (microsoft/manual modes).
+        tenant_id:
+          type: string
+          description: Entra tenant ID (microsoft mode, OBO).
+        client_id:
+          type: string
+          description: Entra application client ID (microsoft mode, OBO).
+        client_secret:
+          type: string
+          description: Entra application client secret (microsoft mode, OBO).
+        use_obo:
+          type: boolean
+          default: true
+          description: >-
+            When true (default for microsoft), exchange the user token on-behalf-of.
+            Set false for manual OAuth when the user token is already Copilot-scoped.
         base_url:
           type: string
           format: uri
           nullable: true
-          description: Optional override when the regional host differs from the default mapping.
+          description: Optional Direct Line endpoint override (secret mode).
+      required: []
 
     AgentCreateRequest:
       type: object
@@ -2865,6 +3075,158 @@ components:
             Merged or replaced connector settings (upstream merge rules apply). For Direct Line,
             update `directline.secret` or `directline.region` here.
 
+    GoldStandardResponse:
+      type: object
+      description: A pinned baseline run group for one agent.
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Favorite UUID.
+        organization_uuid:
+          type: string
+          format: uuid
+        workspace_uuid:
+          type: string
+          format: uuid
+        agent_uuid:
+          type: string
+          format: uuid
+          description: Agent the baseline belongs to, read from the pinned run.
+        run_group_uuid:
+          type: string
+          format: uuid
+          description: The run group being used as the baseline.
+        label:
+          type: string
+          nullable: true
+          description: Display name.
+        pinned_by_user_uuid:
+          type: string
+          format: uuid
+        pinned_at:
+          type: string
+          format: date-time
+          description: When the Favorite was first saved. Not changed by a repin.
+        scenario_uuids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Scenarios covered by the pinned run.
+        scenario_batch_uuid:
+          type: string
+          format: uuid
+          nullable: true
+        timeout_minutes:
+          type: integer
+          nullable: true
+        stale_scenario_uuids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Scenarios whose definition changed since the Favorite was pinned.
+        capability_band:
+          allOf:
+            - $ref: "#/components/schemas/CapabilityBandResponse"
+          nullable: true
+          description: Populated on a single read, and on list only when include_band is set.
+    GoldStandardsListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GoldStandardResponse"
+        total:
+          type: integer
+    GoldStandardCreateRequest:
+      type: object
+      required: [run_group_uuid]
+      description: Tenancy and the pinning user are taken from the API key.
+      properties:
+        run_group_uuid:
+          type: string
+          format: uuid
+          description: Run group to pin, or a simulation uuid when solo is true.
+        label:
+          type: string
+          nullable: true
+        solo:
+          type: boolean
+          default: false
+          description: Pin only the named simulation rather than expanding the batch it leads.
+    GoldStandardUpdateRequest:
+      type: object
+      description: Every field is optional; omitted fields are left as they are.
+      properties:
+        run_group_uuid:
+          type: string
+          format: uuid
+          description: New baseline run group, or a simulation uuid when solo is true.
+        label:
+          type: string
+          nullable: true
+        solo:
+          type: boolean
+          default: false
+    CapabilityBandResponse:
+      type: object
+      description: Capability band for a Favorite. band is null while the baseline is Pending.
+      properties:
+        band:
+          type: integer
+          nullable: true
+          description: Band 1-5, null until confidence is met.
+        band_name:
+          type: string
+          description: Robust, Advanced, Functional, Basic, Limited, or Pending.
+        observation_count:
+          type: integer
+        sigma:
+          type: number
+          nullable: true
+        performance:
+          type: number
+          nullable: true
+          description: Mean of the aggregate per-tag means.
+        consistency_across_skills:
+          type: number
+          nullable: true
+          description: Weakest aggregate per-tag mean.
+        tag_aggregates:
+          type: object
+          additionalProperties:
+            type: number
+          description: Per-tag mean across the baseline's observations.
+        is_confident:
+          type: boolean
+          description: Whether the confidence gate passed.
+        evaluation_tags:
+          type: array
+          items:
+            type: string
+          description: Tag set this baseline matches on.
+    ApiErrorResponse:
+      type: object
+      description: Error envelope returned by verifyax-api for a rejected request. Gateway-generated errors such as 401 use ErrorMessage instead and carry only `message`.
+      required: [error, message, request_id]
+      properties:
+        error:
+          type: string
+          description: Machine-readable code, such as bad_request, not_found, conflict or validation_error.
+        message:
+          type: string
+          description: Human-readable summary.
+        request_id:
+          type: string
+          format: uuid
+          description: Identifier for this request, useful when reporting the failure.
+        details:
+          type: object
+          additionalProperties: true
+          description: Present on validation_error, carrying an `errors` array of per-field failures.
     AgentResponse:
       type: object
       description: Registered agent row returned from create/get/list endpoints.
@@ -3909,6 +4271,26 @@ components:
           type: number
           default: 60.0
           description: Poll timeout in seconds.
+
+    TestCopilotStudioAgentRequest:
+      type: object
+      description: >
+        Body for `POST /v1/agents/tests/api-agent-test-copilot-studio`. Uses the nested
+        `directline` registration object (including `auth_mode`).
+      required: [directline]
+      properties:
+        directline:
+          $ref: "#/components/schemas/DirectlineAgentParameters"
+        user_token:
+          type: string
+          nullable: true
+          description: End-user Entra token (required for microsoft/manual modes).
+        message:
+          type: string
+          default: Hello
+        timeout:
+          type: number
+          default: 60.0
 
     McpToolInfo:
       type: object

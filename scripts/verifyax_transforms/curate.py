@@ -1,14 +1,14 @@
 """The curated, intent-aligned operation set for the no-code surfaces.
 
 A GPT Actions / Gemini function-calling surface works best when it's small and
-covers a coherent workflow — not a flat map of all 46 endpoints (ARCH-1). This
+covers a coherent workflow — not a flat map of every endpoint (ARCH-1). This
 is the default set: enough to drive register → discover tags → generate → poll →
 preview → simulate → poll → evaluate → fetch → track spend, and no more.
 
 Deliberately excluded (SEC-3 / low value on a no-code surface): session-minting
 (`createOneTimeLoginToken`), audit logs, per-call usage drill-down, job
 retry/delete, scenario copy/artifact editing, and the JSON-validation schema
-endpoints. The full 46-operation surface is still available as an explicit
+endpoints. The full operation surface is still available as an explicit
 opt-in (build with FULL=1).
 """
 
@@ -21,6 +21,7 @@ CURATED_OPERATION_IDS = frozenset(
         # Agents — register (with connectivity probes), list, delete
         "testAgentCard",
         "testRestAgent",
+        "testCopilotStudioAgent",
         "createAgent",
         "listAgents",
         "deleteAgent",

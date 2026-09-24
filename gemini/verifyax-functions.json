@@ -122,6 +122,90 @@
     }
   },
   {
+    "name": "testCopilotStudioAgent",
+    "description": "Probes a Copilot Studio agent using the nested `directline` registration shape. Supports `auth_mode` `secret`, `microsoft` (Entra OBO), and `manual` (custom OAuth). Microsoft and manual modes require `user_token` (end-user Entra access token).\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "directline": {
+          "type": "OBJECT",
+          "description": "Copilot Studio configuration nested under `agent_parameters.directline` when `agent_type` is `DIRECTLINE`. Set `auth_mode` to match the agent's Security settings: `secret` (Direct Line / no authentication), `microsoft` (Entra SSO), or `manual` (custom OAuth).\n",
+          "properties": {
+            "auth_mode": {
+              "type": "STRING",
+              "description": "Copilot Studio authentication mode.",
+              "enum": [
+                "secret",
+                "microsoft",
+                "manual"
+              ]
+            },
+            "secret": {
+              "type": "STRING",
+              "description": "Direct Line secret (required when auth_mode is `secret`)."
+            },
+            "region": {
+              "type": "STRING",
+              "description": "Direct Line deployment region (secret mode).",
+              "enum": [
+                "global",
+                "europe",
+                "india",
+                "unitedstates",
+                "asia",
+                "australia",
+                "northamerica"
+              ]
+            },
+            "environment_id": {
+              "type": "STRING",
+              "description": "Power Platform environment ID (microsoft/manual modes)."
+            },
+            "agent_identifier": {
+              "type": "STRING",
+              "description": "Copilot Studio agent schema name (microsoft/manual modes)."
+            },
+            "tenant_id": {
+              "type": "STRING",
+              "description": "Entra tenant ID (microsoft mode, OBO)."
+            },
+            "client_id": {
+              "type": "STRING",
+              "description": "Entra application client ID (microsoft mode, OBO)."
+            },
+            "client_secret": {
+              "type": "STRING",
+              "description": "Entra application client secret (microsoft mode, OBO)."
+            },
+            "use_obo": {
+              "type": "BOOLEAN",
+              "description": "When true (default for microsoft), exchange the user token on-behalf-of. Set false for manual OAuth when the user token is already Copilot-scoped."
+            },
+            "base_url": {
+              "type": "STRING",
+              "description": "Optional Direct Line endpoint override (secret mode).",
+              "nullable": true
+            }
+          }
+        },
+        "user_token": {
+          "type": "STRING",
+          "description": "End-user Entra token (required for microsoft/manual modes).",
+          "nullable": true
+        },
+        "message": {
+          "type": "STRING"
+        },
+        "timeout": {
+          "type": "NUMBER"
+        }
+      },
+      "required": [
+        "directline"
+      ]
+    }
+  },
+  {
     "name": "deleteAgent",
     "description": "Removes the agent from the workspace registry.",
     "parameters": {
@@ -334,11 +418,11 @@
         },
         "total_tags": {
           "type": "INTEGER",
-          "description": "Batch only; tags drawn per scenario from tag_pool (default len(tag_pool)). Capped at 5 info_exchange / 2 interview."
+          "description": "Batch only; tags drawn per scenario from tag_pool (default len(tag_pool)). Capped at 5 info_exchange / 1 interview."
         },
         "max_tags_per_npc": {
           "type": "INTEGER",
-          "description": "Batch only; caps tags per NPC. NPC count = ceil(total_tags / max_tags_per_npc). Ignored for interview (single NPC). Worker default 1 when omitted."
+          "description": "Batch only; tags per NPC. Must be 1 - every NPC holds exactly one skill tag, so NPC count = total_tags. Ignored for interview (single NPC). Default 1 when omitted."
         },
         "objective_steps": {
           "type": "ARRAY",
