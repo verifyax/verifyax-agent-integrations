@@ -22,7 +22,7 @@ info:
   x-verifyax-source:
     source: https://console.verifyax.com/openapi.yaml
     spec_version: 1.0.0
-    spec_sha256: e849ba187add0e9b1f937868799b01cf3bc0fd05a4cda0fe0189ef644e6cdbc3
+    spec_sha256: 44c170974b8aa65cff367a162c87a1776ebad5371e1616528e16091362e2e10f
     surface: curated
 servers:
 - url: https://console.verifyax.com/api/v1
@@ -56,6 +56,11 @@ tags:
     '
 - name: Client Tags
   description: Register organization-specific QnA skill tags for interview scenarios.
+- name: Gold Standards
+  description: 'Favorites: a pinned run group that later runs are compared against. `PATCH` moves a Favorite
+    to a newer run without resetting `pinned_at`, so the capability baseline survives a repin.
+
+    '
 - name: Devices
   description: Enroll client device signing keys so installers can sign artifact uploads.
 security:
@@ -197,6 +202,34 @@ paths:
               body:
                 message: Hello from API docs test
               timeout: 10.0
+      responses:
+        '200':
+          $ref: '#/components/responses/ProxySuccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/GatewayError'
+  /agents/tests/api-agent-test-copilot-studio:
+    post:
+      tags:
+      - Agents
+      summary: Test Copilot Studio agent (all auth modes)
+      description: 'Probes a Copilot Studio agent using the nested `directline` registration shape. Supports
+        `auth_mode` `secret`, `microsoft` (Entra OBO), and `manual` (custom OAuth). Microsoft and manual
+        modes require `user_token` (end-user Entra access token).
+
+        '
+      operationId: testCopilotStudioAgent
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestCopilotStudioAgentRequest'
       responses:
         '200':
           $ref: '#/components/responses/ProxySuccess'
@@ -433,7 +466,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -466,7 +499,6 @@ paths:
               scenario_type: interview
               tags:
               - anger_deescalation
-              - empathy
               context_prompt: Customer wants to return a damaged item bought 2 weeks ago
       responses:
         '201':
@@ -490,19 +522,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '409':
           description: Name already exists in workspace
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '422':
           description: Request body failed Pydantic validation (tag caps, batch rules, etc.)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -512,7 +544,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
   /scenarios/{scenario_uuid}:
     delete:
       tags:
@@ -536,19 +568,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '404':
           description: Scenario not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '409':
           description: Scenario still has non-deleted simulation runs
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -580,13 +612,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '404':
           description: Scenario not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -1107,6 +1139,14 @@ components:
       schema:
         type: string
         format: uuid
+    GoldUuid:
+      name: gold_uuid
+      in: path
+      required: true
+      description: UUID of a Favorite, as returned by `GET /v1/gold-standards`.
+      schema:
+        type: string
+        format: uuid
     SimulationUuid:
       name: simulation_uuid
       in: path
@@ -1170,7 +1210,10 @@ components:
   schemas:
     ErrorMessage:
       type: object
-      description: Generic JSON error envelope from the gateway or upstream when `message` is used.
+      description: 'Gateway-generated JSON error. Always includes `message`. Some gateway routes also
+        include `error` or `success`. verifyax-api rejections use ApiErrorResponse instead.
+
+        '
       properties:
         message:
           type: string
@@ -1489,12 +1532,13 @@ components:
           minimum: 1
           maximum: 5
           description: Batch only; tags drawn per scenario from tag_pool (default len(tag_pool)). Capped
-            at 5 info_exchange / 2 interview.
+            at 5 info_exchange / 1 interview.
         max_tags_per_npc:
           type: integer
           minimum: 1
-          description: Batch only; caps tags per NPC. NPC count = ceil(total_tags / max_tags_per_npc).
-            Ignored for interview (single NPC). Worker default 1 when omitted.
+          maximum: 1
+          description: Batch only; tags per NPC. Must be 1 - every NPC holds exactly one skill tag, so
+            NPC count = total_tags. Ignored for interview (single NPC). Default 1 when omitted.
         objective_steps:
           type: array
           minItems: 1
@@ -1547,23 +1591,24 @@ components:
           description: New scenario description text.
     DirectlineAgentParameters:
       type: object
-      description: 'Direct Line 3.0 configuration for Microsoft Copilot Studio agents. Nested under `agent_parameters.directline`
-        on `POST /v1/agents` when `agent_type` is `DIRECTLINE`. Set `agent_url` to the regional Direct
-        Line host derived from `region`.
+      description: 'Copilot Studio configuration nested under `agent_parameters.directline` when `agent_type`
+        is `DIRECTLINE`. Set `auth_mode` to match the agent''s Security settings: `secret` (Direct Line
+        / no authentication), `microsoft` (Entra SSO), or `manual` (custom OAuth).
 
         '
-      required:
-      - secret
-      - region
       properties:
+        auth_mode:
+          type: string
+          enum:
+          - secret
+          - microsoft
+          - manual
+          default: secret
+          description: Copilot Studio authentication mode.
         secret:
           type: string
           minLength: 1
-          description: 'Direct Line secret from Copilot Studio → Channels → Direct Line. Stored on the
-            agent row and used at simulation runtime — never send in the flat test endpoint body after
-            registration.
-
-            '
+          description: Direct Line secret (required when auth_mode is `secret`).
         region:
           type: string
           default: global
@@ -1575,15 +1620,33 @@ components:
           - asia
           - australia
           - northamerica
-          description: 'Direct Line deployment region. Maps to `agent_url`: `global` → `https://directline.botframework.com`;
-            other regions → `https://{region}.directline.botframework.com` (for example `europe` → `https://europe.directline.botframework.com`).
-
-            '
+          description: Direct Line deployment region (secret mode).
+        environment_id:
+          type: string
+          description: Power Platform environment ID (microsoft/manual modes).
+        agent_identifier:
+          type: string
+          description: Copilot Studio agent schema name (microsoft/manual modes).
+        tenant_id:
+          type: string
+          description: Entra tenant ID (microsoft mode, OBO).
+        client_id:
+          type: string
+          description: Entra application client ID (microsoft mode, OBO).
+        client_secret:
+          type: string
+          description: Entra application client secret (microsoft mode, OBO).
+        use_obo:
+          type: boolean
+          default: true
+          description: When true (default for microsoft), exchange the user token on-behalf-of. Set false
+            for manual OAuth when the user token is already Copilot-scoped.
         base_url:
           type: string
           format: uri
           nullable: true
-          description: Optional override when the regional host differs from the default mapping.
+          description: Optional Direct Line endpoint override (secret mode).
+      required: []
     AgentCreateRequest:
       type: object
       description: 'Registers a new agent endpoint in the workspace agent registry. For Copilot Studio,
@@ -1659,6 +1722,162 @@ components:
             Line, update `directline.secret` or `directline.region` here.
 
             '
+    GoldStandardResponse:
+      type: object
+      description: A pinned baseline run group for one agent.
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Favorite UUID.
+        organization_uuid:
+          type: string
+          format: uuid
+        workspace_uuid:
+          type: string
+          format: uuid
+        agent_uuid:
+          type: string
+          format: uuid
+          description: Agent the baseline belongs to, read from the pinned run.
+        run_group_uuid:
+          type: string
+          format: uuid
+          description: The run group being used as the baseline.
+        label:
+          type: string
+          nullable: true
+          description: Display name.
+        pinned_by_user_uuid:
+          type: string
+          format: uuid
+        pinned_at:
+          type: string
+          format: date-time
+          description: When the Favorite was first saved. Not changed by a repin.
+        scenario_uuids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Scenarios covered by the pinned run.
+        scenario_batch_uuid:
+          type: string
+          format: uuid
+          nullable: true
+        timeout_minutes:
+          type: integer
+          nullable: true
+        stale_scenario_uuids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Scenarios whose definition changed since the Favorite was pinned.
+        capability_band:
+          allOf:
+          - $ref: '#/components/schemas/CapabilityBandResponse'
+          description: Populated on a single read, and on list only when include_band is set.
+    GoldStandardsListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoldStandardResponse'
+        total:
+          type: integer
+    GoldStandardCreateRequest:
+      type: object
+      required:
+      - run_group_uuid
+      description: Tenancy and the pinning user are taken from the API key.
+      properties:
+        run_group_uuid:
+          type: string
+          format: uuid
+          description: Run group to pin, or a simulation uuid when solo is true.
+        label:
+          type: string
+          nullable: true
+        solo:
+          type: boolean
+          default: false
+          description: Pin only the named simulation rather than expanding the batch it leads.
+    GoldStandardUpdateRequest:
+      type: object
+      description: Every field is optional; omitted fields are left as they are.
+      properties:
+        run_group_uuid:
+          type: string
+          format: uuid
+          description: New baseline run group, or a simulation uuid when solo is true.
+        label:
+          type: string
+          nullable: true
+        solo:
+          type: boolean
+          default: false
+    CapabilityBandResponse:
+      type: object
+      description: Capability band for a Favorite. band is null while the baseline is Pending.
+      properties:
+        band:
+          type: integer
+          nullable: true
+          description: Band 1-5, null until confidence is met.
+        band_name:
+          type: string
+          description: Robust, Advanced, Functional, Basic, Limited, or Pending.
+        observation_count:
+          type: integer
+        sigma:
+          type: number
+          nullable: true
+        performance:
+          type: number
+          nullable: true
+          description: Mean of the aggregate per-tag means.
+        consistency_across_skills:
+          type: number
+          nullable: true
+          description: Weakest aggregate per-tag mean.
+        tag_aggregates:
+          type: object
+          additionalProperties:
+            type: number
+          description: Per-tag mean across the baseline's observations.
+        is_confident:
+          type: boolean
+          description: Whether the confidence gate passed.
+        evaluation_tags:
+          type: array
+          items:
+            type: string
+          description: Tag set this baseline matches on.
+    ApiErrorResponse:
+      type: object
+      description: Error envelope returned by verifyax-api for a rejected request. Gateway-generated errors
+        such as 401 use ErrorMessage instead and carry only `message`.
+      required:
+      - error
+      - message
+      - request_id
+      properties:
+        error:
+          type: string
+          description: Machine-readable code, such as bad_request, not_found, conflict or validation_error.
+        message:
+          type: string
+          description: Human-readable summary.
+        request_id:
+          type: string
+          format: uuid
+          description: Identifier for this request, useful when reporting the failure.
+        details:
+          type: object
+          additionalProperties: true
+          description: Present on validation_error, carrying an `errors` array of per-field failures.
     AgentResponse:
       type: object
       description: Registered agent row returned from create/get/list endpoints.
@@ -2763,6 +2982,27 @@ components:
           type: number
           default: 60.0
           description: Poll timeout in seconds.
+    TestCopilotStudioAgentRequest:
+      type: object
+      description: 'Body for `POST /v1/agents/tests/api-agent-test-copilot-studio`. Uses the nested `directline`
+        registration object (including `auth_mode`).
+
+        '
+      required:
+      - directline
+      properties:
+        directline:
+          $ref: '#/components/schemas/DirectlineAgentParameters'
+        user_token:
+          type: string
+          nullable: true
+          description: End-user Entra token (required for microsoft/manual modes).
+        message:
+          type: string
+          default: Hello
+        timeout:
+          type: number
+          default: 60.0
     McpToolInfo:
       type: object
       required:
