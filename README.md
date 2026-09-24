@@ -2,7 +2,7 @@
 
 Use [VerifyAX](https://verifyax.com) — the agent evaluation and verification platform from
 [Conscium](https://conscium.com) — from **OpenAI** and **Google Gemini**, alongside the
-[Claude Code marketplace](https://github.com/verifyax/verifyax-plugins).
+[Claude Code marketplace](https://github.com/verifyax/verifyax-plugins-claude).
 
 Everything here is a thin client over the same VerifyAX Gateway public API (`/api/v1`). The
 canonical contract is the [OpenAPI spec](#openapi-spec-source-of-truth); the MCP server
@@ -26,7 +26,7 @@ function calling), we generate OpenAPI-derived artifacts from the mirror instead
 | **OpenAI Custom GPT** | GPT Actions (OpenAPI) | [openai/README.md](openai/README.md) |
 | **Gemini CLI** | MCP server (`@verifyax/mcp-server`) | [gemini/README.md](gemini/README.md#gemini-cli-mcp) |
 | **Gemini API / Vertex** | Function declarations | [gemini/README.md](gemini/README.md#gemini-api--vertex-function-calling) |
-| **Claude Code** | Plugin marketplace | [verifyax/verifyax-plugins](https://github.com/verifyax/verifyax-plugins) |
+| **Claude Code** | Plugin marketplace | [verifyax/verifyax-plugins-claude](https://github.com/verifyax/verifyax-plugins-claude) |
 
 ## OpenAPI spec (source of truth)
 
