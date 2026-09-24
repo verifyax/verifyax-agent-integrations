@@ -84,8 +84,11 @@ jobs:
 
       - name: Validate (tests + provider acceptance)
         run: |
-          python -m pytest tests/ -q
-          npm test
+          # pipefail matters: without it `tee` swallows a non-zero pytest/npm
+          # exit and this gate passes while the suite is failing.
+          set -o pipefail
+          python -m pytest tests/ -q 2>&1 | tee -a validate.log
+          npm test 2>&1 | tee -a validate.log
 
       - name: Build semantic diff summary
         id: drift
@@ -159,7 +162,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          body=$(printf 'The scheduled OpenAPI sync failed and did not update its pull request.\n\nRun: %s\n\nLikely causes: gateway unreachable, the diff-magnitude guard tripped (truncated/wholesale change — re-run with force=true if legitimate), or validation failed.' "$RUN_URL")
+          # Name the step that actually failed instead of guessing. Steps that have
+          # already finished carry a conclusion while this handler is still running.
+          failed_step=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
+            --jq '[.jobs[]?.steps[]? | select(.conclusion == "failure") | .name] | first // empty' \
+            2>/dev/null || true)
+          [ -n "$failed_step" ] || failed_step="unknown (see the run log)"
+
+          # For a validation failure the assertion itself is the useful part.
+          excerpt=$(grep -aE '^(FAILED|ERROR|E  )|^[0-9]+ (failed|passed)|failed,' \
+            validate.log 2>/dev/null | tail -8 || true)
+
+          {
+            printf 'The scheduled OpenAPI sync failed and did not update its pull request.\n\n'
+            printf '**Failed step:** `%s`\n\n' "$failed_step"
+            if [ -n "$excerpt" ]; then
+              printf '```\n%s\n```\n\n' "$excerpt"
+            fi
+            printf 'Run: %s\n\n' "$RUN_URL"
+            case "$failed_step" in
+              *Diff-magnitude*)
+                printf 'The mirror changed more than the guard allows. If the upstream change is legitimate, re-run this workflow with force=true.\n' ;;
+              *Validate*)
+                printf 'A gate rejected the synced spec. If the assertion names _ALL_OPERATIONS, upstream added or removed operations and the curated set in scripts/verifyax_transforms/curate.py needs a decision -- force=true will not help.\n' ;;
+              *"Sync spec"*)
+                printf 'The gateway spec could not be fetched, or did not validate as OpenAPI 3.x.\n' ;;
+              *)
+                printf 'See the run log for details.\n' ;;
+            esac
+          } > "$RUNNER_TEMP/sync-failure-body.md"
+          body=$(cat "$RUNNER_TEMP/sync-failure-body.md")
           existing=$(gh issue list --state open --search 'OpenAPI sync failed in:title' --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
