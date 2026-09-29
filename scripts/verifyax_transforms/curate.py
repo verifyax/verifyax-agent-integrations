@@ -8,16 +8,30 @@ preview → simulate → poll → evaluate → fetch → track spend, and no mor
 Deliberately excluded (SEC-3 / low value on a no-code surface): session-minting
 (`createOneTimeLoginToken`), audit logs, per-call usage drill-down, job
 retry/delete, scenario copy/artifact editing, and the JSON-validation schema
-endpoints. The full operation surface is still available as an explicit
-opt-in (build with FULL=1).
+endpoints.
+
+Also excluded as separate product areas rather than steps in this workflow:
+gold standards, and NFR verification (`/v1/engine/verify/nfr/...`) — a parallel
+pipeline with its own start/poll/activity/artifact lifecycle, plus a
+pipeline-health endpoint the spec describes as being "for the run page".
+`searchScenarioTags` is left out too: it is the lower-level embedding search,
+and `recommendScenarioTags` covers the same need better for an agent.
+
+The full operation surface is still available as an explicit opt-in
+(build with FULL=1).
 """
 
 from __future__ import annotations
 
 CURATED_OPERATION_IDS = frozenset(
     {
-        # Tags
+        # Tags — list the catalogue, or have the platform suggest tags for a
+        # scenario. Recommendation matters on a no-code surface: an unknown tag
+        # name makes the generation job fail asynchronously, so letting the
+        # platform propose valid tags for a context prompt removes the main way
+        # this workflow goes wrong.
         "listSkillTags",
+        "recommendScenarioTags",
         # Agents — register (with connectivity probes), list, delete
         "testAgentCard",
         "testRestAgent",

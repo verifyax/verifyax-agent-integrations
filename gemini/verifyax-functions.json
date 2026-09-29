@@ -393,7 +393,7 @@
         },
         "tags": {
           "type": "ARRAY",
-          "description": "Explicit skill tag `name` values from GET /v1/tags. At most 5 (info_exchange) or 2 (interview). Each tag's `allowed_scenario_types` must include your `scenario_type`. Invalid tags fail on the async job, not synchronously.",
+          "description": "Explicit skill tag `name` values from GET /v1/tags. At most 5 (info_exchange) or 1 (interview). Each tag's `allowed_scenario_types` must include your `scenario_type`. Required for single-scenario generation; batch requests use `tag_pool`.",
           "items": {
             "type": "STRING"
           }
@@ -463,6 +463,36 @@
       },
       "required": [
         "name",
+        "scenario_type"
+      ]
+    }
+  },
+  {
+    "name": "recommendScenarioTags",
+    "description": "Suggests skill tags using the same pipeline as the Workbench Scenario Generator: verifyax embeddings + LLM recommendation, then gateway merge with lexical tag ranking (cap 20). Provide `context_prompt` and/or `agent_uuid` (at least one). The gateway injects tenant UUIDs from the API key. Response is a **bare JSON array** of skill tag objects — the same shape as `GET /v1/tags`, in recommendation order (not `{ success, data }`).\n",
+    "parameters": {
+      "type": "OBJECT",
+      "properties": {
+        "scenario_type": {
+          "type": "STRING",
+          "description": "Scenario dialogue kind used to filter eligible skill tags.",
+          "enum": [
+            "info_exchange",
+            "interview"
+          ]
+        },
+        "context_prompt": {
+          "type": "STRING",
+          "description": "Optional scenario context (same meaning as scenario `context_prompt`).",
+          "nullable": true
+        },
+        "agent_uuid": {
+          "type": "STRING",
+          "description": "Optional workspace agent UUID; A2A agents may trigger a live agent-card fetch.",
+          "nullable": true
+        }
+      },
+      "required": [
         "scenario_type"
       ]
     }

@@ -22,7 +22,7 @@ info:
   x-verifyax-source:
     source: https://console.verifyax.com/openapi.yaml
     spec_version: 1.0.0
-    spec_sha256: 44c170974b8aa65cff367a162c87a1776ebad5371e1616528e16091362e2e10f
+    spec_sha256: b1725ec04bdfcda7df4ae1417f344d4152d37c8afe4502c6652ba5e157009869
     surface: curated
 servers:
 - url: https://console.verifyax.com/api/v1
@@ -545,6 +545,93 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiErrorResponse'
+  /scenarios/tag-recommendation:
+    post:
+      tags:
+      - Scenarios
+      summary: Recommend scenario skill tags
+      description: 'Suggests skill tags using the same pipeline as the Workbench Scenario Generator: verifyax
+        embeddings + LLM recommendation, then gateway merge with lexical tag ranking (cap 20). Provide
+        `context_prompt` and/or `agent_uuid` (at least one). The gateway injects tenant UUIDs from the
+        API key. Response is a **bare JSON array** of skill tag objects — the same shape as `GET /v1/tags`,
+        in recommendation order (not `{ success, data }`).
+
+        '
+      operationId: recommendScenarioTags
+      parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagRecommendationPublicRequest'
+            example:
+              scenario_type: interview
+              context_prompt: Customer wants to return a damaged item bought 2 weeks ago
+              agent_uuid: 00000000-0000-0000-0000-000000000002
+      responses:
+        '200':
+          description: Recommended skill tags (Workbench Suggested column parity)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SkillTag'
+              example:
+              - name: human_npc
+                category: structure
+                description: Multi-agent human NPC scenario structure.
+                benchmark_family: null
+                allowed_scenario_types:
+                - info_exchange
+                - interview
+                custom: false
+              - name: skepticism_handling
+                category: social
+                description: Handle skeptical interlocutors.
+                benchmark_family: null
+                allowed_scenario_types:
+                - info_exchange
+                - interview
+                custom: false
+        '400':
+          description: Missing context/agent, invalid scenario_type, or other client error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Agent not found or not in workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '422':
+          description: Request body failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: Recommender dependency unavailable (for example Redis or embeddings)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '504':
+          description: Recommender exceeded server timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          $ref: '#/components/responses/GatewayError'
   /scenarios/{scenario_uuid}:
     delete:
       tags:
@@ -1460,6 +1547,137 @@ components:
         is_hallucination_trap:
           type: boolean
           default: false
+    TagRecommendationPublicRequest:
+      type: object
+      required:
+      - scenario_type
+      description: 'Body for `POST /v1/scenarios/tag-recommendation`. At least one of `context_prompt`
+        or `agent_uuid` is required. Tenant UUIDs are injected by the gateway from the API key.
+
+        '
+      properties:
+        scenario_type:
+          type: string
+          enum:
+          - info_exchange
+          - interview
+          description: Scenario dialogue kind used to filter eligible skill tags.
+        context_prompt:
+          type: string
+          nullable: true
+          description: Optional scenario context (same meaning as scenario `context_prompt`).
+        agent_uuid:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional workspace agent UUID; A2A agents may trigger a live agent-card fetch.
+    TagRecommendationAnnotation:
+      type: object
+      required:
+      - reasons
+      - use_count
+      properties:
+        reasons:
+          type: array
+          items:
+            type: string
+            enum:
+            - underutilized
+            - problematic
+          description: History-based reasons this tag was prioritized.
+        use_count:
+          type: integer
+          description: Prior simulations for this agent that included the tag.
+        avg_grade:
+          type: number
+          nullable: true
+          description: Mean of recent evaluation grades (1–5) when available.
+    TagRecommendationData:
+      type: object
+      required:
+      - skill_tags
+      - recommended_scenario_type
+      - scenario_type_reasoning
+      - skill_tags_reasoning
+      properties:
+        skill_tags:
+          type: array
+          items:
+            type: string
+          description: Skill tags allowed for the selected scenario_type.
+        recommended_scenario_type:
+          type: string
+          description: Suggested scenario type (may match or refine the request).
+        scenario_type_reasoning:
+          type: string
+        skill_tags_reasoning:
+          type: string
+        tag_annotations:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/TagRecommendationAnnotation'
+          nullable: true
+          description: Optional per-tag history annotations for recommended tags.
+        warnings:
+          type: array
+          items:
+            type: string
+          nullable: true
+    TagRecommendationPublicResponse:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TagRecommendationData'
+    TagSearchPublicRequest:
+      type: object
+      required:
+      - scenario_type
+      - query
+      description: 'Body for `POST /v1/scenarios/tag-search`. Tenant UUIDs are injected by the gateway
+        from the API key.
+
+        '
+      properties:
+        scenario_type:
+          type: string
+          enum:
+          - info_exchange
+          - interview
+        query:
+          type: string
+          minLength: 2
+          description: Natural-language search text (trimmed; minimum 2 characters).
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          nullable: true
+          description: Max tags to return (default 50).
+    TagSearchData:
+      type: object
+      required:
+      - skill_tags
+      properties:
+        skill_tags:
+          type: array
+          items:
+            type: string
+          description: Skill tags ranked by embedding similarity to the query.
+    TagSearchPublicResponse:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TagSearchData'
     JobCancelResponse:
       type: object
       properties:
@@ -1470,12 +1688,12 @@ components:
       type: object
       description: 'Body for POST /v1/scenarios/generate (maps to verifyax-api SimulationScenarioCreate).
         The gateway injects organization_uuid, workspace_uuid, and user_uuid from the API key. Tag list
-        size is capped at 5 for info_exchange and 2 for interview.
+        size is capped at 5 for info_exchange and 1 for interview.
 
         **Discover tags:** `GET /v1/tags` (see Skill Tags). Pass each tag''s `name` in `tags` / `tag_pool`.
-        Filter by `allowed_scenario_types` for your `scenario_type` before calling generate — unknown
-        or incompatible tags are rejected asynchronously by the `scenario_creation` worker (**201** then
-        **FAILED** job, not **400** on POST).
+        Filter by `allowed_scenario_types` for your `scenario_type` before calling generate — missing,
+        unknown, or incompatible tags are rejected synchronously with **400** before a `scenario_creation`
+        job is queued.
 
         **Single vs batch:** Single mode sends name, scenario_type, tags, and optional context_prompt.
         Batch mode (num_scenarios > 1) adds tag_pool and optional include_tags, total_tags, and max_tags_per_npc.
@@ -1486,6 +1704,18 @@ components:
       required:
       - name
       - scenario_type
+      anyOf:
+      - required:
+        - tags
+        properties:
+          num_scenarios:
+            maximum: 1
+      - required:
+        - num_scenarios
+        - tag_pool
+        properties:
+          num_scenarios:
+            minimum: 2
       properties:
         name:
           type: string
@@ -1503,11 +1733,12 @@ components:
           description: Optional context to guide generation (info_exchange and interview).
         tags:
           type: array
+          minItems: 1
           items:
             type: string
           description: Explicit skill tag `name` values from GET /v1/tags. At most 5 (info_exchange) or
-            2 (interview). Each tag's `allowed_scenario_types` must include your `scenario_type`. Invalid
-            tags fail on the async job, not synchronously.
+            1 (interview). Each tag's `allowed_scenario_types` must include your `scenario_type`. Required
+            for single-scenario generation; batch requests use `tag_pool`.
         num_scenarios:
           type: integer
           minimum: 1
@@ -2675,6 +2906,192 @@ components:
           format: uuid
           nullable: true
           description: Correlates batched or multi-run executions in the UI and APIs.
+    StartNfrVerificationRequest:
+      type: object
+      description: 'Start an async NFR verification run. The gateway injects `organization_uuid`, `workspace_uuid`,
+        and `user_uuid` on proxied POST bodies, so clients may omit tenant fields.
+
+        '
+      required:
+      - agent_uuid
+      properties:
+        agent_uuid:
+          type: string
+          format: uuid
+          description: Registered agent whose `agent_url` is the load-test target.
+        nfr_config:
+          type: object
+          description: NFR preset, probes, overlays, and load profile passed to the engine worker.
+          additionalProperties: true
+        auth_override:
+          type: object
+          nullable: true
+          description: Ad-hoc target auth when not stored on the agent record.
+          additionalProperties: true
+        ownership_attested:
+          type: boolean
+          default: false
+          description: 'Caller asserts authorization to load-test the target. Required for non-smoke presets
+            and load-bearing segment runs.
+
+            '
+    StartNfrVerificationResponse:
+      type: object
+      description: Acknowledgement from the NFR start endpoint — async work continues under `job_uuid`.
+      properties:
+        job_uuid:
+          type: string
+          format: uuid
+          description: Orchestration job to poll via `GET /v1/jobs/{job_uuid}`.
+        simulation_uuid:
+          type: string
+          format: uuid
+          description: NFR verification run id.
+        status:
+          type: string
+          description: Engine acknowledgement status (e.g. `dispatched`).
+          example: dispatched
+        message:
+          type: string
+          description: Human-readable detail from the engine.
+    NfrDomainVerifyRequest:
+      type: object
+      description: 'Start or check DNS-TXT domain ownership for an agent load-test target. The gateway
+        injects `organization_uuid`, `workspace_uuid`, and `user_uuid` on proxied POST bodies, so clients
+        may omit tenant fields.
+
+        '
+      required:
+      - agent_uuid
+      properties:
+        organization_uuid:
+          type: string
+          format: uuid
+          description: Injected by the gateway on proxied requests.
+        workspace_uuid:
+          type: string
+          format: uuid
+          description: Injected by the gateway on proxied requests.
+        user_uuid:
+          type: string
+          format: uuid
+          description: Injected by the gateway on proxied requests.
+        agent_uuid:
+          type: string
+          format: uuid
+          description: Agent whose `agent_url` host is being verified.
+    NfrDomainVerifyResponse:
+      type: object
+      description: DNS-TXT challenge details and verification status for an agent host.
+      properties:
+        hostname:
+          type: string
+          description: Host derived from the agent URL (without scheme or path).
+        txt_record_name:
+          type: string
+          description: DNS TXT record name to publish (typically `_vax-verify.<hostname>`).
+        txt_record_value:
+          type: string
+          description: Challenge token value to publish in the TXT record.
+        status:
+          type: string
+          description: '`pending` until the TXT record resolves, then `verified`.'
+          example: pending
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        instructions:
+          type: string
+          description: Operator-facing steps to publish the TXT record and re-check.
+    NfrVerificationResultResponse:
+      type: object
+      description: NFR report payload returned when artifacts are available.
+      properties:
+        simulation_uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          description: Simulation row status (e.g. `COMPLETED`, `IN_PROGRESS`, `FAILED`).
+        simulation_outcome:
+          type: string
+          nullable: true
+        simulation_reason:
+          type: string
+          nullable: true
+        report:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Primary `verifyax_report.json` payload when present.
+        partial_report:
+          type: object
+          nullable: true
+          additionalProperties: true
+        smoke_report:
+          type: object
+          nullable: true
+          additionalProperties: true
+        capacity_report:
+          type: object
+          nullable: true
+          additionalProperties: true
+        artifact_paths:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+    NfrRunActivityResponse:
+      type: object
+      description: Live activity snapshot for an in-flight NFR verification run.
+      properties:
+        simulation_uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          description: Simulation row status (e.g. `IN_PROGRESS`, `COMPLETED`).
+        queue_position:
+          type: integer
+          nullable: true
+        job_uuid:
+          type: string
+          format: uuid
+          nullable: true
+        celery_task_id:
+          type: string
+          nullable: true
+        celery_state:
+          type: string
+          nullable: true
+        phase:
+          type: string
+          nullable: true
+          description: Current engine phase when the worker is active.
+        heartbeat_mtime:
+          type: number
+          nullable: true
+        phase_age_s:
+          type: number
+          nullable: true
+        heartbeat_alive:
+          type: boolean
+        heartbeat_last_seen:
+          type: integer
+          nullable: true
+        heartbeat_last_seen_iso:
+          type: string
+          format: date-time
+          nullable: true
+        recent_events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        simulation_outcome:
+          type: string
+          nullable: true
     CreditPreviewRequest:
       type: object
       description: 'Workspace credit preview. The gateway injects `organization_uuid`, `workspace_uuid`,
@@ -3053,7 +3470,7 @@ components:
           type: string
           format: uri
           nullable: true
-          description: Catalogue MCP adapter A2A URL for card/message probes after discovery.
+          description: Catalogue MCP adapter A2A URL for an agent-card probe after discovery.
         agent_uuid:
           type: string
           format: uuid
@@ -3067,7 +3484,7 @@ components:
         message:
           type: string
           nullable: true
-          description: Optional probe message for the adapter A2A message test.
+          description: Ignored. MCP connection tests do not send A2A probe messages.
     TestMcpConnectionResponse:
       type: object
       required:
