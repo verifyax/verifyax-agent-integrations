@@ -1,7 +1,7 @@
 {
   "source": "https://console.verifyax.com/openapi.yaml",
   "spec_version": "1.0.0",
-  "spec_sha256": "44c170974b8aa65cff367a162c87a1776ebad5371e1616528e16091362e2e10f",
+  "spec_sha256": "b1725ec04bdfcda7df4ae1417f344d4152d37c8afe4502c6652ba5e157009869",
   "surface": "curated",
-  "declaration_count": 19
+  "declaration_count": 20
 }
