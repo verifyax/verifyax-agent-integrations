@@ -1,7 +1,7 @@
 [
   {
     "name": "listAgents",
-    "description": "Lists agents registered in the workspace with optional type filter and pagination.",
+    "description": "Lists every agent registered in the workspace, including agents created by other members, with optional type filter and pagination.",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -239,7 +239,7 @@
   },
   {
     "name": "simulateScenario",
-    "description": "Starts a scenario simulation; supports evaluate_on_complete and multiple runs.",
+    "description": "Starts a scenario simulation. Call it directly: it first checks that the agent can be reached, and checks the conversation type when needed. `status` is `dispatched` when the runs have started, or `checking` when they are waiting for a conversation capability check. Waiting runs start when that check passes and fail when it does not. Poll `GET /v1/simulations/{simulation_uuid}`.\n",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -332,7 +332,7 @@
   },
   {
     "name": "listScenarios",
-    "description": "Lists scenario rows with optional `scenario_type`, `status`, `limit`, and `offset` filters. Default `limit` upstream is 100 (max 1000).\n",
+    "description": "Lists every scenario in the workspace, including scenarios created by other members, with optional `scenario_type`, `status`, `limit`, and `offset` filters. Default `limit` upstream is 100 (max 1000).\n",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -469,7 +469,7 @@
   },
   {
     "name": "recommendScenarioTags",
-    "description": "Suggests skill tags using the same pipeline as the Workbench Scenario Generator: verifyax embeddings + LLM recommendation, then gateway merge with lexical tag ranking (cap 20). Provide `context_prompt` and/or `agent_uuid` (at least one). The gateway injects tenant UUIDs from the API key. Response is a **bare JSON array** of skill tag objects — the same shape as `GET /v1/tags`, in recommendation order (not `{ success, data }`).\n",
+    "description": "Suggests skill tags using the same pipeline as the Workbench Scenario Generator: verifyax embeddings + LLM recommendation, then gateway merge with lexical tag ranking (cap 10). With `agent_uuid`, verifyax-api returns up to five relevance tags plus up to five underutilized shortlist fits (no padding). Provide `context_prompt` and/or `agent_uuid` (at least one). The gateway injects tenant UUIDs from the API key. Response is a **bare JSON array** of skill tag objects — the same shape as `GET /v1/tags`, in recommendation order (not `{ success, data }`).\n",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -531,7 +531,7 @@
   },
   {
     "name": "listSimulations",
-    "description": "Paginated simulation search with rich filters (status, dates, run group, evaluation flags).",
+    "description": "Paginated simulation search across the workspace, including runs started by other members, with rich filters (status, dates, run group, evaluation flags). Connection-check practice runs are hidden unless you pass `include_connection_test=true`.\n",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -582,6 +582,14 @@
         "include_evaluation_jobs": {
           "type": "BOOLEAN",
           "description": "When true, embed evaluation job summaries on each listed run (heavier payload)."
+        },
+        "include_connection_test": {
+          "type": "BOOLEAN",
+          "description": "When true, include connection-check practice runs. VerifyAX starts these short, free runs on its own to check that an agent can hold the selected conversation type. They are hidden by default. Reading one run or event by its id always returns it.\n"
+        },
+        "exclude_connection_test": {
+          "type": "BOOLEAN",
+          "description": "Kept for older clients. `false` includes connection-check practice runs, like `include_connection_test=true`. `true`, or leaving it out, hides them.\n"
         },
         "limit": {
           "type": "INTEGER",
@@ -635,7 +643,7 @@
   },
   {
     "name": "listUsageEvents",
-    "description": "Lists usage telemetry events (LiteLLM/compute USD actuals) with filters for product area, related resource IDs, and pagination.",
+    "description": "Lists usage telemetry events for the workspace, including events from other members (LiteLLM/compute USD actuals), with filters for product area, related resource IDs, and pagination. Events from connection-check practice runs are hidden unless you pass `include_connection_test=true`.\n",
     "parameters": {
       "type": "OBJECT",
       "properties": {
@@ -676,6 +684,14 @@
         "evaluation_job_uuid": {
           "type": "STRING",
           "description": "Filter usage events associated with this evaluation job UUID."
+        },
+        "include_connection_test": {
+          "type": "BOOLEAN",
+          "description": "When true, include connection-check practice runs. VerifyAX starts these short, free runs on its own to check that an agent can hold the selected conversation type. They are hidden by default. Reading one run or event by its id always returns it.\n"
+        },
+        "exclude_connection_test": {
+          "type": "BOOLEAN",
+          "description": "Kept for older clients. `false` includes connection-check practice runs, like `include_connection_test=true`. `true`, or leaving it out, hides them.\n"
         },
         "limit": {
           "type": "INTEGER",

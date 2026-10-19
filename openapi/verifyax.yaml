@@ -139,12 +139,13 @@ paths:
       summary: Enroll a signing device
       description: >
         Registers a client device's public signing key so the device can sign artifact uploads.
-        The installer authenticates with its workspace API key and presents a one-time
-        `enrollmentCode` minted from a logged-in Workbench session. The gateway verifies the code,
-        cross-checks that it belongs to the API key's organization, derives the RFC 7638 JWK
-        thumbprint (`jkt`) and signature algorithm, then registers the device. Only OKP (Ed25519,
-        `EdDSA`) and EC (P-256, `ES256`) public keys are accepted.
+        The one-time `enrollmentCode`, minted from a logged-in Workbench session, is the
+        credential for this request. No API key is needed. The gateway derives the RFC 7638 JWK
+        thumbprint (`jkt`) and signature algorithm, then registers the device in the organization
+        and workspace named by the code. Only OKP (Ed25519, `EdDSA`) and EC (P-256, `ES256`)
+        public keys are accepted.
       operationId: enrollDevice
+      security: []
       requestBody:
         required: true
         content:
@@ -164,23 +165,69 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorMessage"
+        "409":
+          description: The public key is already enrolled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+
+  /v1/workspace:
+    get:
+      tags: [Auth]
+      summary: Get the API key's workspace
+      description: >
+        Returns the organization and workspace names and roles for the authenticated API key.
+      operationId: getApiKeyWorkspace
+      responses:
+        "200":
+          description: API key workspace
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [organization, workspace, organization_roles, workspace_roles]
+                properties:
+                  organization:
+                    type: object
+                    required: [id, name]
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                        nullable: true
+                  workspace:
+                    type: object
+                    required: [id, name]
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                        nullable: true
+                  organization_roles:
+                    type: array
+                    items:
+                      type: string
+                  workspace_roles:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          description: API key context is missing an organization or workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Enrollment code belongs to a different organization
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorMessage"
-        "409":
-          description: >
-            The public key belongs to a revoked device, which is never reactivated. Enroll again
-            with a newly generated key; the one-time code is restored and stays usable. Re-sending
-            a key that is still active is not a conflict — it returns the existing enrollment.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorMessage"
+          $ref: "#/components/responses/Forbidden"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -213,8 +260,9 @@ paths:
       tags: [Scenarios]
       summary: List scenarios
       description: >
-        Lists scenario rows with optional `scenario_type`, `status`, `limit`, and `offset`
-        filters. Default `limit` upstream is 100 (max 1000).
+        Lists every scenario in the workspace, including scenarios created by other members,
+        with optional `scenario_type`, `status`, `limit`, and `offset` filters. Default
+        `limit` upstream is 100 (max 1000).
       operationId: listScenarios
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -431,8 +479,10 @@ paths:
       summary: Recommend scenario skill tags
       description: >
         Suggests skill tags using the same pipeline as the Workbench Scenario Generator: verifyax
-        embeddings + LLM recommendation, then gateway merge with lexical tag ranking (cap 20).
-        Provide `context_prompt` and/or `agent_uuid` (at least one). The gateway injects tenant
+        embeddings + LLM recommendation, then gateway merge with lexical tag ranking (cap 10).
+        With `agent_uuid`, verifyax-api returns up to five relevance tags plus up to five
+        underutilized shortlist fits (no padding). Provide `context_prompt` and/or `agent_uuid`
+        (at least one). The gateway injects tenant
         UUIDs from the API key. Response is a **bare JSON array** of skill tag objects — the same
         shape as `GET /v1/tags`, in recommendation order (not `{ success, data }`).
       operationId: recommendScenarioTags
@@ -914,8 +964,9 @@ paths:
       tags: [Jobs]
       summary: List jobs
       description: >
-        Lists async jobs for the workspace (scenario creation, engine simulation runs,
-        evaluations, etc.) with optional `current_status` filter and pagination.
+        Lists async jobs for the workspace, including jobs created by other members
+        (scenario creation, engine simulation runs, evaluations, etc.) with optional
+        `current_status` filter and pagination.
       operationId: listJobs
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -1040,7 +1091,7 @@ paths:
     get:
       tags: [Agents]
       summary: List agents
-      description: Lists agents registered in the workspace with optional type filter and pagination.
+      description: Lists every agent registered in the workspace, including agents created by other members, with optional type filter and pagination.
       operationId: listAgents
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -1186,6 +1237,107 @@ paths:
         "500":
           $ref: "#/components/responses/GatewayError"
 
+  /v1/agents/{agent_uuid}/nfr/gate-policy:
+    get:
+      tags: [Agents]
+      summary: Get the agent's release policy
+      description: >
+        Returns what this agent's runs are judged against, and the hash every decision
+        made under it records. Comparing that hash against the one on a decision tells a
+        pipeline the policy changed after the run was judged, without comparing rules
+        field by field.
+      operationId: getNfrGatePolicy
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/AgentUuid"
+      responses:
+        "200":
+          description: The stored policy and its hash
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NfrGatePolicyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The agent belongs to another workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+    put:
+      tags: [Agents]
+      summary: Replace the agent's release policy
+      description: >
+        The body replaces the saved policy rather than merging into it, so a repository's
+        policy file is the statement of what the team blocks on. A merge would let a rule
+        somebody deleted there go on blocking builds here. The one exception is the first
+        save: when neither the saved policy nor the body names `forbidden_kinds`, the kinds
+        still in the agent's old alert config are kept. Every save stores `forbidden_kinds`,
+        so from the second save on a body that leaves it out clears it like any other rule.
+        An unparseable field falls back to its default
+        rather than refusing the policy, because a policy that will not load is a gate
+        that cannot decide. An unknown rule name is refused with 422, so a typo cannot
+        drop a rule.
+      operationId: setNfrGatePolicy
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - $ref: "#/components/parameters/AgentUuid"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NfrGatePolicyRequest"
+            example:
+              policy:
+                required_dimensions: [security, safety]
+                forbidden_kinds: [auth_bypass]
+                severity_floor: high
+                block_on_regression: true
+                inconclusive_blocks: true
+      responses:
+        "200":
+          description: The policy as stored, with its hash
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NfrGatePolicyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The agent belongs to another workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "422":
+          description: The policy names a rule the gate does not know
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+
   /v1/agents/tests/agent-card:
     post:
       tags: [Agents]
@@ -1277,10 +1429,14 @@ paths:
       tags: [Agents]
       summary: Test A2A agent connection (card, message, mini simulations)
       description: >
-        Full A2A onboarding connectivity test: fetches the agent card, sends a synchronous
-        message probe, and optionally starts background mini scenario simulations when
-        `agent_uuid` and tenant UUIDs are present (injected from the API key on the public
-        surface). Poll the agent record for `testing` status when `testing_started` is true.
+        For a saved agent (`agent_uuid` with the tenant ids the API key supplies), returns
+        at once with `testing_started: true`. The card and one message then run in the
+        background, up to the agent's timeout and at most 600 seconds. Poll
+        `GET /v1/agents/{agent_uuid}` and read `connection_check.phase` (`reach` while the
+        card and first reply are in progress, `practice` while the practice runs are in
+        progress) and `connection_check.reach_failure` (kept for 15 minutes when the agent
+        could not be reached). A request without a saved agent still waits for the card and
+        message, then returns `save_and_retest`. Returns `503` when the check cannot start.
       operationId: testA2aConnection
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -1313,6 +1469,13 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/GatewayError"
+        "503":
+          description: >
+            The connection check could not start because of an error on our side. Test again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
 
   /v1/agents/tests/a2a-message:
     post:
@@ -1447,6 +1610,101 @@ paths:
         "500":
           $ref: "#/components/responses/GatewayError"
 
+  /v1/agents/tests/connection-preflight:
+    post:
+      tags: [Agents]
+      summary: Check that a saved agent is still reachable
+      description: >
+        Reachability check against the saved URL and credentials. Does not run practice
+        simulations and does not replace the stored connection-test result. Run start does
+        this same check, so use this only to test an agent without starting a run. For
+        `auth_method=cs` agents, pass a fresh Conscium session token in `cs_auth_token`. The
+        gateway overwrites `workspace_uuid` from the API key.
+      operationId: connectionPreflight
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectionCheckRequest"
+            example:
+              agent_uuid: 00000000-0000-4000-8000-000000000001
+      responses:
+        "200":
+          description: Reachability result. A failed check is still HTTP 200 with success false.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionPreflightResponse"
+        "400":
+          description: Missing or invalid agent_uuid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Agent does not belong to the API key's workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+
+  /v1/agents/tests/connection-check/stop:
+    post:
+      tags: [Agents]
+      summary: Stop a running capability check
+      description: >
+        Stops exactly the check identified by `check_id`, cancels its active practice
+        runs, and fails product runs waiting on it. The previous saved result remains.
+        The gateway overwrites `workspace_uuid` from the API key.
+      operationId: stopConnectionCheck
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StopConnectionCheckRequest"
+      responses:
+        "200":
+          description: Check stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stopped]
+                properties:
+                  stopped:
+                    type: boolean
+                    enum: [true]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The supplied check is no longer running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+
   /v1/engine/workspace-credit-preview:
     post:
       tags: [Engine]
@@ -1517,7 +1775,12 @@ paths:
     post:
       tags: [Engine]
       summary: Trigger scenario simulation
-      description: Starts a scenario simulation; supports evaluate_on_complete and multiple runs.
+      description: >
+        Starts a scenario simulation. Call it directly: it first checks that the agent can
+        be reached, and checks the conversation type when needed. `status` is `dispatched`
+        when the runs have started, or `checking` when they are waiting for a conversation
+        capability check. Waiting runs start when that check passes and fail when it does
+        not. Poll `GET /v1/simulations/{simulation_uuid}`.
       operationId: simulateScenario
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -1535,7 +1798,9 @@ paths:
               timeout_minutes: 30
       responses:
         "200":
-          description: Simulation started
+          description: >
+            Runs started (`status: dispatched`), or created and waiting for a
+            conversation capability check (`status: checking`).
           content:
             application/json:
               schema:
@@ -1555,6 +1820,8 @@ paths:
           description: >
             Scenario row exists but its `scenario.json` artifact has not been uploaded yet
             (see issue #2370). Use `POST /v1/scenarios/generate` to create a fully-formed scenario.
+            Also returned, with a plain-text `detail`, when the agent cannot be reached or has
+            failed the check for every selected conversation type.
           content:
             application/json:
               schema:
@@ -1865,6 +2132,44 @@ paths:
         "500":
           $ref: "#/components/responses/GatewayError"
 
+  /v1/engine/verify/nfr/{simulation_uuid}/decision:
+    get:
+      tags: [Engine]
+      summary: Get the release gate's decision for a run
+      description: >
+        What the gate decided about one run and what fired, so a pipeline can block a
+        merge and say why. `inconclusive` is its own outcome rather than a pass: a run
+        that could not be measured has not certified the change, and `blocks` states
+        whether this policy stops the merge on it.
+      operationId: getNfrRunDecision
+      parameters:
+        - $ref: "#/components/parameters/XRequestId"
+        - name: simulation_uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The decision and the reasons behind it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NfrRunDecisionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Simulation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+
   /v1/engine/verify/nfr/{simulation_uuid}/artifacts/{filename}:
     get:
       tags: [Engine]
@@ -1926,7 +2231,10 @@ paths:
     get:
       tags: [Simulations]
       summary: List simulations
-      description: Paginated simulation search with rich filters (status, dates, run group, evaluation flags).
+      description: >
+        Paginated simulation search across the workspace, including runs started by other
+        members, with rich filters (status, dates, run group, evaluation flags). Connection-check
+        practice runs are hidden unless you pass `include_connection_test=true`.
       operationId: listSimulations
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -1944,6 +2252,8 @@ paths:
         - $ref: "#/components/parameters/HasSingleEvaluation"
         - $ref: "#/components/parameters/GroupByRunGroup"
         - $ref: "#/components/parameters/IncludeEvaluationJobs"
+        - $ref: "#/components/parameters/IncludeConnectionTest"
+        - $ref: "#/components/parameters/ExcludeConnectionTest"
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
       responses:
@@ -1964,7 +2274,7 @@ paths:
     get:
       tags: [Simulations]
       summary: List simulations by scenario
-      description: Returns simulations that ran against a specific scenario with optional agent and status filters.
+      description: Returns simulations that ran against a specific scenario, including runs started by other members, with optional agent and status filters.
       operationId: listSimulationsByScenario
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -2289,7 +2599,11 @@ paths:
     get:
       tags: [Usage]
       summary: List usage events
-      description: Lists usage telemetry events (LiteLLM/compute USD actuals) with filters for product area, related resource IDs, and pagination.
+      description: >
+        Lists usage telemetry events for the workspace, including events from other members
+        (LiteLLM/compute USD actuals), with filters for product area, related resource IDs, and
+        pagination. Events from connection-check practice runs are hidden unless you pass
+        `include_connection_test=true`.
       operationId: listUsageEvents
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -2302,6 +2616,8 @@ paths:
         - $ref: "#/components/parameters/ScenarioUuidQueryOptional"
         - $ref: "#/components/parameters/SimulationJobUuid"
         - $ref: "#/components/parameters/EvaluationJobUuid"
+        - $ref: "#/components/parameters/IncludeConnectionTest"
+        - $ref: "#/components/parameters/ExcludeConnectionTest"
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
       responses:
@@ -2384,8 +2700,9 @@ paths:
       tags: [Scenarios]
       summary: Validate JSON payload against scenario schema
       description: >
-        Validates a JSON **string** against the scenario input model (`schema: scenario`, default).
-        Always returns **200** with a human-readable `result` field (`VALID` / `INVALID` and error
+        Validates a JSON **string** against the scenario model a run would load it as (`schema: scenario`,
+        default): a document in the engine's own format is checked as that format, and any other as a
+        Playground scenario. Always returns **200** with a human-readable `result` field (`VALID` / `INVALID` and error
         lines); malformed JSON or schema violations are expressed in `result`, not via 4xx.
       operationId: validateJsonPayload
       parameters:
@@ -2416,7 +2733,7 @@ paths:
     get:
       tags: [Scenarios]
       summary: Get scenario JSON schema
-      description: Returns the canonical scenario JSON Schema document for client-side or offline validation.
+      description: Returns the JSON Schema of the engine's scenario format, which new scenarios are written in, for client-side or offline validation.
       operationId: getValidationSchemaScenario
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -2430,15 +2747,63 @@ paths:
         "500":
           $ref: "#/components/responses/GatewayError"
 
+  /v1/client-tags/{skill_tag}/availability:
+    get:
+      tags: [Client Tags]
+      summary: Check a client tag name
+      description: >
+        Checks whether a skill tag name is free for the API key's workspace, already used by
+        that workspace or the whole organization, used by another workspace, or reserved by a
+        built-in VerifyAX tag. A name used by another workspace returns `in_use` and no description.
+      operationId: getClientTagAvailability
+      parameters:
+        - name: skill_tag
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Name availability
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [skill_tag, status]
+                properties:
+                  skill_tag:
+                    type: string
+                  status:
+                    type: string
+                    enum: [available, taken, in_use, reserved]
+                  description:
+                    type: string
+                    nullable: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          description: Invalid skill tag name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorMessage"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/GatewayError"
+
   /v1/client-tags/register-qna:
     post:
       tags: [Client Tags]
       summary: Register QnA client skill tag
       description: >
-        Registers a per-organization QnA skill tag and persists the benchmark payload to
-        master-data storage (`tags/org/<orgId>/qna/...` and `client_tags.jsonl`). Used by
-        Q&amp;A Studio export and custom benchmark pipelines. Tenant UUIDs are injected from
-        the API key. Set `dry_run: true` to validate without writing storage.
+        Registers a QnA skill tag for the workspace that owns the API key and persists the
+        benchmark payload to master-data storage (`tags/org/<orgId>/qna/...` and
+        `client_tags.jsonl`). The new tag is visible only to that workspace. Republishing
+        the same name in that workspace updates it. An existing org-wide tag with the same
+        name stays org-wide. The same name in another workspace, or a global tag name, is
+        rejected. Q&amp;A Studio only; requires an enrolled device. Tenant UUIDs are
+        injected from the API key. Set `dry_run: true` to validate without writing storage.
       operationId: registerClientQnaTag
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -2468,7 +2833,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: Skill tag name collides with a global catalogue tag
+          description: The name is a global tag, the tag already has different questions, or the QnA file belongs to another tag
           content:
             application/json:
               schema:
@@ -2883,6 +3248,25 @@ components:
       description: When true, embed evaluation job summaries on each listed run (heavier payload).
       schema:
         type: boolean
+    IncludeConnectionTest:
+      name: include_connection_test
+      in: query
+      description: >
+        When true, include connection-check practice runs. VerifyAX starts these short, free
+        runs on its own to check that an agent can hold the selected conversation type. They
+        are hidden by default. Reading one run or event by its id always returns it.
+      schema:
+        type: boolean
+        default: false
+    ExcludeConnectionTest:
+      name: exclude_connection_test
+      in: query
+      description: >
+        Kept for older clients. `false` includes connection-check practice runs, like
+        `include_connection_test=true`. `true`, or leaving it out, hides them.
+      schema:
+        type: boolean
+        default: true
     ItemIdentifier:
       name: item_identifier
       in: query
@@ -3324,7 +3708,15 @@ components:
         avg_grade:
           type: number
           nullable: true
-          description: Mean of recent evaluation grades (1–5) when available.
+          description: Mean of recent evaluation grades as a 0–5 rubric index when available.
+        avg_grade_label:
+          type: string
+          nullable: true
+          description: Rubric label for avg_grade (Critical … Optimal).
+        avg_grade_color:
+          type: string
+          nullable: true
+          description: Hex colour for avg_grade_label from the shared grade rubric.
 
     TagRecommendationData:
       type: object
@@ -3856,6 +4248,11 @@ components:
           description: >
             Connector-specific configuration blob. Direct Line agents store credentials under
             `directline`.
+        connection_check:
+          allOf:
+            - $ref: "#/components/schemas/AgentConnectionCheckState"
+          nullable: true
+          description: Saved A2A capability result and any check running now.
         created_at:
           type: string
           format: date-time
@@ -4361,12 +4758,25 @@ components:
         overall_score:
           type: number
           nullable: true
-          description: Mean of per-tag average grades.
+          description: Mean of per-tag average grades (0–5 rubric index; use overall_grade_label for display).
+        overall_grade_label:
+          type: string
+          nullable: true
+          description: Workbench rubric label for overall_score (Critical … Optimal).
+        overall_grade_color:
+          type: string
+          nullable: true
+          description: Hex colour for overall_grade_label from the shared grade rubric.
         per_tag_scores:
           type: object
           additionalProperties:
             type: number
-          description: Map of tag name to average grade.
+          description: Map of tag name to average grade (0–5 rubric index).
+        per_tag_grade_labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of tag name to rubric label for each per_tag_scores entry.
         evaluator_model:
           type: string
           nullable: true
@@ -4392,10 +4802,20 @@ components:
             overall_score:
               type: number
               nullable: true
+            overall_grade_label:
+              type: string
+              nullable: true
+            overall_grade_color:
+              type: string
+              nullable: true
             per_tag_scores:
               type: object
               additionalProperties:
                 type: number
+            per_tag_grade_labels:
+              type: object
+              additionalProperties:
+                type: string
             evaluator_model:
               type: string
               nullable: true
@@ -4551,11 +4971,16 @@ components:
           description: Present when evaluation was scheduled immediately (`evaluate_on_complete`).
         status:
           type: string
-          description: Engine acknowledgement status (e.g. `dispatched`).
+          description: >
+            `dispatched` when the runs have started. `checking` when they are
+            waiting for a conversation capability check. Poll the simulation;
+            `checking` is not an error.
           example: dispatched
         message:
           type: string
-          description: Human-readable detail from the engine.
+          description: >
+            Human-readable detail. For `checking`, this is
+            `Checking this agent for the selected run. It takes a minute or two.`
           example: Scenario simulation task(s) dispatched successfully (1 run(s))
         simulation_uuids:
           type: array
@@ -4665,27 +5090,355 @@ components:
           type: string
           description: Operator-facing steps to publish the TXT record and re-check.
 
+    NfrGatePolicy:
+      type: object
+      description: >
+        What a team blocks on. Every rule is optional; a policy with none set blocks
+        nothing, which is why `inconclusive_blocks` defaults to true.
+      properties:
+        required_dimensions:
+          type: array
+          description: >
+            Dimensions that must have been measured. Measured, not merely in scope: a
+            dimension the run did not exercise makes the outcome inconclusive rather
+            than a pass.
+          items:
+            type: string
+        forbidden_kinds:
+          type: array
+          description: Finding kinds that must never be open on a judged run.
+          items:
+            type: string
+        severity_floor:
+          type: string
+          nullable: true
+          description: Block on any open finding at or above this severity.
+          enum: [critical, high, medium, low]
+        block_on_regression:
+          type: boolean
+          description: >
+            Block when a dimension's band drops against the agent's latest run on the
+            default branch. With no such run, this rule does not evaluate.
+        inconclusive_blocks:
+          type: boolean
+          description: >
+            Block when the run could not certify the change. Defaults to true: a run
+            that could not be measured has not said the change is safe, only that it
+            could not tell.
+    NfrGatePolicyRequest:
+      type: object
+      required: [policy]
+      properties:
+        policy:
+          $ref: "#/components/schemas/NfrGatePolicy"
+    NfrGatePolicyResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+          format: uuid
+        policy:
+          $ref: "#/components/schemas/NfrGatePolicy"
+        policy_hash:
+          type: string
+          description: The hash every decision judged under this policy records.
+    NfrGateDecisionReason:
+      type: object
+      description: One rule that fired, naming what it fired on.
+      properties:
+        rule_id:
+          type: string
+          description: Which rule fired, for example `policy.severity_floor`.
+        summary:
+          type: string
+        findings:
+          type: array
+          description: >
+            The findings behind this reason, named by identity rather than by score,
+            because an engineer cannot act on a number.
+          items:
+            type: object
+            properties:
+              dimension:
+                type: string
+              kind:
+                type: string
+        dimensions:
+          type: array
+          items:
+            type: string
+    NfrGateDecision:
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum: [pass, fail, inconclusive]
+        blocks:
+          type: boolean
+          description: Whether this policy stops the merge on this outcome.
+        run_uuid:
+          type: string
+          format: uuid
+        baseline_run_uuid:
+          type: string
+          format: uuid
+          nullable: true
+          description: The default-branch run the regression rule compared against, if any.
+        policy_hash:
+          type: string
+        decided_at:
+          type: string
+          format: date-time
+        inconclusive_blocks:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/NfrGateDecisionReason"
+    NfrRunDecisionResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+          format: uuid
+        decision:
+          $ref: "#/components/schemas/NfrGateDecision"
+    NfrReport:
+      type: object
+      additionalProperties: true
+      description: >
+        The reader-facing report payload, carried on `report`. Documented one level deep, because these are the
+        keys a consumer branches on. The structures beneath them are not specified: they follow
+        the engine and change with it, so `additionalProperties` stays true rather than pinning a
+        shape this contract would then have to keep true.
+
+
+        The harness's own economics are not here and never reach a reader. Spend, credits, token
+        counts and the judge models we chose are split into a separate billing artefact that is
+        not served on this path.
+      properties:
+        schema_version:
+          type: string
+          description: Version of this report's own shape. Read it before relying on any field below.
+        report_type:
+          type: string
+          description: Which report shape this is, which is what decides the keys a consumer can expect.
+        overall_score:
+          type: number
+          description: The run's headline score. It is 0.0 when nothing was measured, so read overall_band to tell that apart from a measured zero.
+        overall_band:
+          type: string
+          description: The headline band, pass / weak / fail, derived from overall_score. It is not_measured when the run is void or nothing was measured.
+        dimension_scores:
+          type: array
+          description: One entry per dimension, each with its score, band, findings and the prose the renderers display. This is the body of the report.
+        fail_banded_dimensions:
+          type: array
+          description: Names of the dimensions that banded fail, so a reader does not have to scan dimension_scores to find them.
+        caveats:
+          type: array
+          description: What this run does not claim. Every caveat here qualifies the verdict and is rendered on the web and in the Markdown.
+        caveats_reader:
+          type: array
+          description: The caveats to show a person, in reading order, as strings. This is caveats with machine prefixes such as `not_measured:` removed, plus lines the engine composes from the rest of the report, such as which dimensions banded fail and what a clean adversarial result does not prove. Prefer it to caveats when displaying them.
+        caveat_groups:
+          type: array
+          description: The groups that caveats_grouped sorts caveats into, in the order a reader should meet them. The same five appear on every report, whether or not they hold any caveats. Each entry has a `key` (standing, not_measured, thin_sample, default_used or other), a `title` to use as the heading, and a `note` on how to read the group, or null when the heading says enough. For example, the not_measured note says an absent measurement is not a pass.
+        caveats_grouped:
+          type: object
+          additionalProperties: true
+          description: The lines of caveats_reader sorted into groups, keyed by the group `key` from caveat_groups, each mapping to a list of strings. Every line is in exactly one group, and a group with no lines is left out. The standing group holds limitations that are true of every run.
+        provenance_items:
+          type: array
+          description: Statements about how this run was made and what it did not establish, such as the run's seed and profile, what the judge preflight found, whether the event log was checked and whether cross-tenant access was proven. Only the items that apply to this run are present. Each entry has an `id` (for example run-provenance or concurrency-isolation), a `heading`, the `text` itself, a `kind`, a `category`, and on some items a `details` list of supporting lines. `kind` is caveat when the item qualifies the verdict and belongs beside the caveats, and disclosure when it only describes the run. `category` is the caveat group the item joins when shown among the caveats.
+        methodology:
+          type: object
+          additionalProperties: true
+          description: How the run was made and what it could not establish. Carries provenance, judge configuration, measurement limitations and caveat groupings.
+        run_validity:
+          type: object
+          additionalProperties: true
+          description: Whether the run is sound enough to read at all. A run voided here has scores that must not be taken at face value.
+        operational_readiness:
+          type: array
+          description: Whether each skill reached a working state before it was measured. A skill that never worked was not tested.
+        warm_up_summary:
+          type: object
+          additionalProperties: true
+          description: What happened during warm-up, before measurement began.
+        warm_up_downgraded_dimensions:
+          type: array
+          description: Dimensions whose band was lowered because warm-up did not complete for them.
+        deployment_fit:
+          type: array
+          description: How the measured behaviour fits named deployment profiles.
+        regulatory_evidence:
+          type: object
+          additionalProperties: true
+          description: Framework-by-framework evidence drawn from this run, for a reader assembling a compliance case.
+        scope_classifier:
+          type: object
+          additionalProperties: true
+          description: What the run decided was in scope to measure, and why.
+        active_overlays:
+          type: array
+          description: Overlays applied to this run, which change what is probed and how.
+        agent_card:
+          type: object
+          additionalProperties: true
+          description: The target agent as it described itself, including the skills the run drew its tasks from.
+        transport_metadata:
+          type: object
+          additionalProperties: true
+          description: How the harness reached the agent, and what the transport reported back.
+        locust_stats:
+          type: object
+          additionalProperties: true
+          description: Raw load-generator statistics for the run.
+        baseline_diff:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: What changed against the baseline run, when one resolved. Null when there was nothing to compare against, which is not the same as nothing having changed.
+        eval_awareness_paired_enabled:
+          type: boolean
+          description: Whether the paired evaluation-awareness probe ran.
+        eval_awareness_paired_summary:
+          type: object
+          additionalProperties: true
+          description: What the paired probe found about the agent behaving differently when it believed it was being tested.
+        eval_awareness_reasoning_detected:
+          type: boolean
+          description: Whether the agent's own reasoning showed it had inferred it was under evaluation.
+        eval_awareness_reasoning_summary:
+          type: object
+          additionalProperties: true
+          description: The evidence behind eval_awareness_reasoning_detected.
+        judge_cascade_universal_default:
+          type: boolean
+          description: Whether the judge cascade ran on its default settings for this run.
+        llm_used:
+          type: boolean
+          description: Whether any judge call was made. False means every verdict here is deterministic.
+        redaction_mode:
+          type: string
+          description: Whether secret redaction was on while this run's artefacts were written.
+        profile_name:
+          type: string
+          description: The scoring profile this run was graded against.
+        profile_version:
+          type: string
+          description: Version of that scoring profile, so a score is compared only with scores graded the same way.
+        generated_at:
+          type: string
+          description: When this report was written.
+        run_started_at_iso:
+          type: string
+          description: When the run itself began, which is earlier than generated_at by the run's duration.
+        vax_seed:
+          type: integer
+          description: The seed the run was given, so a run can be repeated.
+        vax_seed_source:
+          type: string
+          description: Where that seed came from, supplied by the caller or chosen by the harness.
+        warm_up_gate_failed:
+          type: boolean
+          description: Whether the warm-up applicability check raised instead of running. True means the run could not establish which dimensions warm-up had driven into a working state, which is not the same as having checked and found nothing to downgrade.
+        judge_execution_mode:
+          type: string
+          description: How the judge calls were run for this report. Present only when a judge ran.
+        judge_batch_enabled:
+          type: boolean
+          description: Present and true when judging ran in batch. Absent otherwise, so its absence is not a claim that batching was off for a run that used no judge.
+        eval_awareness_behavioral_delta_detected:
+          type: boolean
+          description: Present and true when the paired probe measured the agent behaving differently once it believed it was being evaluated.
+        per_skill:
+          type: array
+          description: Configured SLO and scope rows per skill. Stamped on a report written for a run that aborted, so a reader of a partial report can still see what was configured.
+        vax_deterministic_load:
+          type: boolean
+          description: Present and true when the run derived its load identities deterministically. Absent on a run that did not, so a reader can tell a deterministic load from one that merely pinned a seed.
+        injection_sample_seed_contract:
+          type: object
+          additionalProperties: true
+          description: How the injection corpus sample was drawn, when the run was given a seed contract rather than a bare seed. Absent otherwise, and a run carrying one does not also carry vax_seed, because two answers to what produced the draws is worse than one.
+        verdict:
+          type: object
+          additionalProperties: true
+          description: The scoring object the engine produced, carried alongside the rendered report.
+
     NfrVerificationResultResponse:
       type: object
-      description: NFR report payload returned when artifacts are available.
+      description: >
+        NFR report payload returned when artifacts are available. Which of `report`,
+        `smoke_report` and `capacity_report` is populated depends on `preset`, so read
+        that field before branching on the report keys.
       properties:
         simulation_uuid:
           type: string
           format: uuid
+        agent_uuid:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            The agent this run tested, so a consumer can join a report to the agent's
+            cross-run views. The report artefact itself carries no platform UUID.
         status:
           type: string
           description: Simulation row status (e.g. `COMPLETED`, `IN_PROGRESS`, `FAILED`).
+        preset:
+          type: string
+          nullable: true
+          description: >
+            Which preset produced this run, and therefore which report key is populated:
+            `smoke` fills `smoke_report`, `capacity` fills `capacity_report`, and every
+            other preset fills `report`. A run of any preset that stopped early can also,
+            or instead, fill `partial_report`. Not a closed set: new presets are added
+            without a change to this schema.
+        nfr_config:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: >
+            The whole dispatch config this run was started with, not a summary of it: preset,
+            probes, skipped probes, overlays, mode, load profile, caps, latency SLOs, per-skill
+            tier and SLO overrides, selected test skills, request limit, judge consensus, probe
+            flags, cold-start ladder, and the IDOR and horizontal-access resource ids. The four
+            credential fields (`foreign_tenant_token`, `low_priv_token`,
+            `idor_other_resource_fingerprint`, `horizontal_other_user_fingerprint`) are always
+            null here, because they are stripped before the run is stored: a null does not mean
+            the run was started without one.
         simulation_outcome:
           type: string
           nullable: true
         simulation_reason:
           type: string
           nullable: true
-        report:
-          type: object
+          description: >
+            Why the run ended as it did. Usually null on a run that completed normally.
+            Otherwise either a short token such as `budget_exceeded` or `spend_cap`, or a
+            one-line diagnostic such as `Run aborted before final report`. Not a closed
+            set, and the diagnostic wording can change between releases.
+        started_at:
+          type: string
+          format: date-time
           nullable: true
-          additionalProperties: true
-          description: Primary `verifyax_report.json` payload when present.
+          description: >
+            When the run began executing. Can be null even on a finished run, when its
+            start was never recorded, for example because the run finished before its
+            start callback arrived.
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the run was requested, which is earlier than `started_at` by the queue wait.
+        report:
+          allOf:
+            - $ref: "#/components/schemas/NfrReport"
+          nullable: true
+          description: Primary `verifyax_report.json` payload. It is null for a `smoke` or `capacity` preset run, which write their own report instead, and for any run that stopped before writing one. Such a run carries `partial_report` when it got far enough to write it; a run that crashed at startup has neither, and only `artifact_paths` says what it left.
         partial_report:
           type: object
           nullable: true
@@ -4694,10 +5447,12 @@ components:
           type: object
           nullable: true
           additionalProperties: true
+          description: The `verifyax_smoke.json` payload for a `smoke` preset run. It has its own shape, not `NfrReport`.
         capacity_report:
           type: object
           nullable: true
           additionalProperties: true
+          description: The `verifyax_capacity_report.json` payload for a `capacity` preset run. It has its own shape, not `NfrReport`.
         artifact_paths:
           type: object
           nullable: true
@@ -4997,15 +5752,112 @@ components:
           type: string
           format: uuid
           nullable: true
-          description: When set with tenant context, mini-sim results are persisted on the agent.
+          description: >
+            When set with tenant context, the test runs in the background and progress is
+            read from the agent's `connection_check`.
         message:
           type: string
           nullable: true
-          description: Optional probe message for the synchronous A2A message step.
+          description: >
+            Optional probe message. For a saved agent this step runs in the background.
         cs_auth_token:
           type: string
           nullable: true
           description: Fresh Conscium session token for `auth_method=cs` agents.
+
+    ConnectionCheckRequest:
+      type: object
+      description: >
+        Body for `POST /v1/agents/tests/connection-preflight`. The gateway sets
+        `workspace_uuid` from the API key.
+      required: [agent_uuid]
+      properties:
+        agent_uuid:
+          type: string
+          format: uuid
+          description: Saved agent to check. It must belong to the API key's workspace.
+        cs_auth_token:
+          type: string
+          nullable: true
+          description: >
+            Fresh Conscium session token. Used when the saved agent has
+            `auth_method=cs`.
+
+    StopConnectionCheckRequest:
+      type: object
+      required: [agent_uuid, check_id]
+      properties:
+        agent_uuid:
+          type: string
+          format: uuid
+        check_id:
+          type: string
+          format: uuid
+
+    AgentConnectionCheckState:
+      type: object
+      required: [capabilities, running, check_types]
+      properties:
+        capabilities:
+          type: object
+          required: [interview, info_exchange]
+          properties:
+            interview:
+              type: string
+              enum: [unknown, passed, failed]
+            info_exchange:
+              type: string
+              enum: [unknown, passed, failed]
+        running:
+          type: boolean
+        phase:
+          type: string
+          nullable: true
+          enum: [reach, practice]
+          description: >
+            While a check is running: `reach` means the card and first reply are still in
+            progress; `practice` means the practice runs are in progress.
+        reach_failure:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: >
+            The `A2AConnectionTestResponse` of a recent Test Connection that could not reach
+            the agent. Kept for 15 minutes and not saved on the agent.
+        check_id:
+          type: string
+          format: uuid
+          nullable: true
+        check_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        check_types:
+          type: array
+          items:
+            type: string
+            enum: [interview, info_exchange]
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        report:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    ConnectionPreflightResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          description: True when the saved URL and credentials are reachable.
+        message:
+          type: string
 
     TestA2AMessageRequest:
       type: object
@@ -5199,12 +6051,14 @@ components:
             - testing
             - unreachable
             - profile_not_found
+            - auth_rejected
             - wont_reply
             - save_and_retest
             - connected
             - connected_interview_only
             - connected_info_exchange_only
             - practice_run_failed
+            - unsupported_extension
             - server_error
             - unexpected_error
             - lifecycle_blocked
@@ -5227,7 +6081,9 @@ components:
         testing_started:
           type: boolean
           default: false
-          description: True when background mini-simulations were started.
+          description: >
+            True when a saved-agent test was started in the background. Read progress from
+            the agent's `connection_check`.
 
     RegisterClientQnaRequest:
       type: object
@@ -5442,10 +6298,6 @@ components:
         model_name:
           type: string
           description: Model id or display name for this call.
-        model_version:
-          type: string
-          nullable: true
-          description: Provider-reported model version when available.
         input_tokens:
           type: integer
           description: Billable input tokens attributed to the call.
