@@ -1137,7 +1137,7 @@ paths:
                   agent_parameters:
                     auth_method: bearer
                     token: sk-example-token-min-10-chars
-                    timeout: 15000
+                    timeout: 45000
               directline:
                 summary: Copilot Studio (Direct Line)
                 description: >
@@ -1713,8 +1713,10 @@ paths:
         Unified credit preview: organisation balance, pending ENGINE verification runs and
         scenario_creation jobs (with stored estimates), and either `newRunEstimatedCredits`
         (`mode: scenario_run`) or `newGenerationEstimatedCredits` (`mode: scenario_generation`).
-        The estimate field that does not apply is `null`. Tenant UUIDs in the body are
-        overwritten by the gateway from the API key (see API overview).
+        The estimate field that does not apply is `null`. For organisations on **fixed-price**
+        billing, the new-run or generation fields are an **exact** price from the active price
+        book (same logic as `POST /billing/quote`), not a burn-engine interval. Tenant UUIDs
+        in the body are overwritten by the gateway from the API key (see API overview).
       operationId: previewWorkspaceCredits
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -1912,6 +1914,21 @@ paths:
                 message: NFR verification task dispatched successfully
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: >
+            The agent cannot be reached now. Every start runs the same reach check as a
+            simulation run start, before any credits are reserved, and nothing is saved or
+            charged. `message` gives the reason and what to fix.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+              example:
+                error: conflict
+                message: >-
+                  We could not open a connection to the agent. Check the Base URL, and that
+                  the agent is running.
+                request_id: 33333333-3333-3333-3333-333333333333
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -2800,10 +2817,13 @@ paths:
         Registers a QnA skill tag for the workspace that owns the API key and persists the
         benchmark payload to master-data storage (`tags/org/<orgId>/qna/...` and
         `client_tags.jsonl`). The new tag is visible only to that workspace. Republishing
-        the same name in that workspace updates it. An existing org-wide tag with the same
-        name stays org-wide. The same name in another workspace, or a global tag name, is
-        rejected. Q&amp;A Studio only; requires an enrolled device. Tenant UUIDs are
-        injected from the API key. Set `dry_run: true` to validate without writing storage.
+        the same name updates it only when that row is already a Q&amp;A tag. A workspace
+        Q&amp;A tag stays in that workspace, and an org-wide Q&amp;A tag stays org-wide.
+        A tag that is not a Q&amp;A tag, the same name in another workspace, or a global
+        tag name is rejected. The stored tag always has category `qna_custom`, a fixed
+        testing method, and no comments. Q&amp;A Studio only; requires an enrolled device.
+        Tenant UUIDs are injected from the API key. Set `dry_run: true` to validate without
+        writing storage.
       operationId: registerClientQnaTag
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -2816,7 +2836,6 @@ paths:
             example:
               skill_tag: latin_dance_qna
               description: Latin dance history recall questions extracted from studio QnA.
-              testing_method: Ask factual recall questions from the registered QnA benchmark.
               qna:
                 questions:
                   - question: What is salsa?
@@ -2833,7 +2852,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: The name is a global tag, the tag already has different questions, or the QnA file belongs to another tag
+          description: The existing tag is not a Q&A tag, the name is a global tag, the tag already has different questions, or the QnA file belongs to another tag
           content:
             application/json:
               schema:
@@ -4772,6 +4791,11 @@ components:
           additionalProperties:
             type: number
           description: Map of tag name to average grade (0–5 rubric index).
+        per_tag_names:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of tag name to the name the run's report shows for it. A tag the scenario defines for itself shows its definition's name. A tag without an entry is left out, so show its id.
         per_tag_grade_labels:
           type: object
           additionalProperties:
@@ -4812,6 +4836,10 @@ components:
               type: object
               additionalProperties:
                 type: number
+            per_tag_names:
+              type: object
+              additionalProperties:
+                type: string
             per_tag_grade_labels:
               type: object
               additionalProperties:
@@ -5619,9 +5647,13 @@ components:
           additionalProperties: true
           nullable: true
           description: >
-            Full billing estimate metadata for the new run preview, including nested
+            Billing metadata for the new run preview. **Metered** orgs include nested
             `estimate_breakdown` (NPC/evaluator/external/compute lines), `effective_rounds`,
-            `scenario_type_used`, `global_config_version`, etc.
+            `scenario_type_used`, `global_config_version`, and optional min/max billable
+            intervals. **Fixed-price** orgs set `pricing: fixed`, `price_book_version`,
+            `quote_breakdown` (run fee, per-tag lines, catalogue multiplier), `tags`, and
+            `num_runs`. Missing skill tags set `canStart: false` and
+            `blockCode: fixed_price_missing_tags`.
         newGenerationEstimatedCredits:
           type: number
           nullable: true
@@ -6088,36 +6120,47 @@ components:
     RegisterClientQnaRequest:
       type: object
       required: [skill_tag, description, qna]
+      description: >
+        A Q&A publish. The stored tag is always category `qna_custom`, with a fixed testing
+        method and no comments. Other fields are not part of this request.
       properties:
         skill_tag:
           type: string
+          maxLength: 64
           description: Canonical tag name (must not collide with a global catalogue tag).
         description:
           type: string
           minLength: 10
-        testing_method:
-          type: string
-          minLength: 10
-          default: Ask factual recall questions from the registered QnA benchmark.
-        category:
-          type: string
-          default: qna_custom
+          maxLength: 1000
         qna_file:
           type: string
           nullable: true
           description: Optional filename hint for stored QnA JSON.
-        comments:
-          type: string
-          nullable: true
         qna:
           type: object
+          additionalProperties: false
           required: [questions]
           properties:
             questions:
               type: array
               minItems: 1
               items:
-                $ref: "#/components/schemas/QnaQuestionItem"
+                type: object
+                additionalProperties: false
+                required: [question, correct_answer]
+                properties:
+                  question:
+                    type: string
+                    minLength: 1
+                    maxLength: 4000
+                    description: Sent to the agent under test as one interviewer message.
+                  correct_answer:
+                    type: string
+                    minLength: 1
+                    maxLength: 4000
+                  is_hallucination_trap:
+                    type: boolean
+                    default: false
         qna_user_edited:
           type: boolean
           default: false
@@ -6125,6 +6168,12 @@ components:
           type: boolean
           default: false
           description: When true, validate only — no writes to master-data storage.
+        replace_existing:
+          type: boolean
+          default: false
+          description: >
+            Accepted when the caller confirms a name already in use. An existing tag still
+            keeps its questions, and a built-in name is still refused.
 
     RegisterClientQnaResponse:
       type: object

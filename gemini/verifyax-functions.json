@@ -275,7 +275,7 @@
   },
   {
     "name": "previewWorkspaceCredits",
-    "description": "Unified credit preview: organisation balance, pending ENGINE verification runs and scenario_creation jobs (with stored estimates), and either `newRunEstimatedCredits` (`mode: scenario_run`) or `newGenerationEstimatedCredits` (`mode: scenario_generation`). The estimate field that does not apply is `null`. Tenant UUIDs in the body are overwritten by the gateway from the API key (see API overview).\n",
+    "description": "Unified credit preview: organisation balance, pending ENGINE verification runs and scenario_creation jobs (with stored estimates), and either `newRunEstimatedCredits` (`mode: scenario_run`) or `newGenerationEstimatedCredits` (`mode: scenario_generation`). The estimate field that does not apply is `null`. For organisations on **fixed-price** billing, the new-run or generation fields are an **exact** price from the active price book (same logic as `POST /billing/quote`), not a burn-engine interval. Tenant UUIDs in the body are overwritten by the gateway from the API key (see API overview).\n",
     "parameters": {
       "type": "OBJECT",
       "properties": {
