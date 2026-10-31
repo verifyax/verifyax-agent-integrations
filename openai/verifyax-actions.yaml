@@ -22,7 +22,7 @@ info:
   x-verifyax-source:
     source: https://console.verifyax.com/openapi.yaml
     spec_version: 1.0.0
-    spec_sha256: 8c56e32914fc8a415f49dc7b257bd5feb1aae883c2fe44a0bc45665f61e3a125
+    spec_sha256: 2077d41de5cb4e7eec59bb35161bd05b4ab4fe721d16d3c100cc626430e3dd74
     surface: curated
 servers:
 - url: https://console.verifyax.com/api/v1
@@ -58,7 +58,7 @@ tags:
   description: Register organization-specific QnA skill tags for interview scenarios.
 - name: Gold Standards
   description: 'Favorites: a pinned run group that later runs are compared against. `PATCH` moves a Favorite
-    to a newer run without resetting `pinned_at`, so the capability baseline survives a repin.
+    to a newer run without resetting `pinned_at`, the time the Favorite was first saved.
 
     '
 - name: Devices
@@ -120,7 +120,7 @@ paths:
                   agent_parameters:
                     auth_method: bearer
                     token: sk-example-token-min-10-chars
-                    timeout: 15000
+                    timeout: 45000
               directline:
                 summary: Copilot Studio (Direct Line)
                 description: 'Set `agent_url` from `directline.region` (see DirectlineAgentParameters).
@@ -369,7 +369,9 @@ paths:
       description: 'Unified credit preview: organisation balance, pending ENGINE verification runs and
         scenario_creation jobs (with stored estimates), and either `newRunEstimatedCredits` (`mode: scenario_run`)
         or `newGenerationEstimatedCredits` (`mode: scenario_generation`). The estimate field that does
-        not apply is `null`. Tenant UUIDs in the body are overwritten by the gateway from the API key
+        not apply is `null`. For organisations on **fixed-price** billing, the new-run or generation fields
+        are an **exact** price from the active price book (same logic as `POST /billing/quote`), not a
+        burn-engine interval. Tenant UUIDs in the body are overwritten by the gateway from the API key
         (see API overview).
 
         '
@@ -1791,6 +1793,18 @@ components:
           description: Explicit skill tag `name` values from GET /v1/tags. At most 5 (info_exchange) or
             1 (interview). Each tag's `allowed_scenario_types` must include your `scenario_type`. Required
             for single-scenario generation; batch requests use `tag_pool`.
+        tag_files:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 120
+          description: 'An optional short topic for each file-tested tag''s file, keyed by tag `name`,
+            for example "A brief for a marketing campaign". A tag whose catalogue entry has `requires_authored_file:
+            true` is tested on a file its NPC sends. Only such tags that you select (in `tags`, `tag_pool`,
+            or `include_tags`) may appear. The topic sets only what the file is about; the platform writes
+            each file to suit the tag''s test, names it, and gives it to the NPC that holds the tag. A
+            tag without a topic gets one that fits the scenario. In a batch, a topic is used for every
+            scenario that includes its tag.'
         num_scenarios:
           type: integer
           minimum: 1
@@ -2057,10 +2071,6 @@ components:
             type: string
             format: uuid
           description: Scenarios whose definition changed since the Favorite was pinned.
-        capability_band:
-          allOf:
-          - $ref: '#/components/schemas/CapabilityBandResponse'
-          description: Populated on a single read, and on list only when include_band is set.
     GoldStandardsListResponse:
       type: object
       properties:
@@ -2101,43 +2111,6 @@ components:
         solo:
           type: boolean
           default: false
-    CapabilityBandResponse:
-      type: object
-      description: Capability band for a Favorite. band is null while the baseline is Pending.
-      properties:
-        band:
-          type: integer
-          nullable: true
-          description: Band 1-5, null until confidence is met.
-        band_name:
-          type: string
-          description: Robust, Advanced, Functional, Basic, Limited, or Pending.
-        observation_count:
-          type: integer
-        sigma:
-          type: number
-          nullable: true
-        performance:
-          type: number
-          nullable: true
-          description: Mean of the aggregate per-tag means.
-        consistency_across_skills:
-          type: number
-          nullable: true
-          description: Weakest aggregate per-tag mean.
-        tag_aggregates:
-          type: object
-          additionalProperties:
-            type: number
-          description: Per-tag mean across the baseline's observations.
-        is_confident:
-          type: boolean
-          description: Whether the confidence gate passed.
-        evaluation_tags:
-          type: array
-          items:
-            type: string
-          description: Tag set this baseline matches on.
     ApiErrorResponse:
       type: object
       description: Error envelope returned by verifyax-api for a rejected request. Gateway-generated errors
@@ -2755,6 +2728,12 @@ components:
           additionalProperties:
             type: number
           description: Map of tag name to average grade (0–5 rubric index).
+        per_tag_names:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of tag name to the name the run's report shows for it. A tag the scenario defines
+            for itself shows its definition's name. A tag without an entry is left out, so show its id.
         per_tag_grade_labels:
           type: object
           additionalProperties:
@@ -2798,6 +2777,10 @@ components:
               type: object
               additionalProperties:
                 type: number
+            per_tag_names:
+              type: object
+              additionalProperties:
+                type: string
             per_tag_grade_labels:
               type: object
               additionalProperties:
@@ -3006,7 +2989,10 @@ components:
           description: Registered agent whose `agent_url` is the load-test target.
         nfr_config:
           type: object
-          description: NFR preset, probes, overlays, and load profile passed to the engine worker.
+          description: NFR preset, probes, overlays, and load profile passed to the engine worker. A load
+            field you leave out takes the preset's own default, which is the shape the run screen sends,
+            so naming only the nfr-full preset runs 240s with isolation stress. A `mode` the preset cannot
+            run as is refused with 422 before anything is reserved or charged.
           additionalProperties: true
         auth_override:
           type: object
@@ -3148,6 +3134,17 @@ components:
         policy_hash:
           type: string
           description: The hash every decision judged under this policy records.
+        retired:
+          type: object
+          description: 'Rules the saved or submitted policy names that the gate no longer applies, keyed
+            by rule, for example `required_dimensions: [compliance]`. They are left out of `policy` and
+            of the hash. Empty once the policy is saved without them.
+
+            '
+          additionalProperties:
+            type: array
+            items:
+              type: string
     NfrGateDecisionReason:
       type: object
       description: One rule that fired, naming what it fired on.
@@ -3234,6 +3231,12 @@ components:
         report_type:
           type: string
           description: Which report shape this is, which is what decides the keys a consumer can expect.
+        preset:
+          type: string
+          nullable: true
+          description: The preset the run launched under, such as nfr-standard (Standard PRR) or nfr-full
+            (Deep PRR). Both PRR presets share report_type structural, so this is the field that tells
+            them apart. Null on older reports and on engine runs started without a preset.
         overall_score:
           type: number
           description: The run's headline score. It is 0.0 when nothing was measured, so read overall_band
@@ -3248,8 +3251,15 @@ components:
             renderers display. This is the body of the report.
         fail_banded_dimensions:
           type: array
-          description: Names of the dimensions that banded fail, so a reader does not have to scan dimension_scores
-            to find them.
+          description: Names of the dimensions that banded fail and count as failed, so a reader does
+            not have to scan dimension_scores to find them. A fail on an advisory band is listed in advisory_fail_dimensions
+            instead.
+        advisory_fail_dimensions:
+          type: array
+          description: Names of the dimensions that banded fail on an advisory band, such as a Performance
+            band measured against a generic latency budget. They are scored at reduced weight and do not
+            count as failed dimensions. Together with fail_banded_dimensions this lists every dimension
+            that banded fail.
         caveats:
           type: array
           description: What this run does not claim. Every caveat here qualifies the verdict and is rendered
@@ -3680,9 +3690,11 @@ components:
           type: object
           additionalProperties: true
           nullable: true
-          description: 'Full billing estimate metadata for the new run preview, including nested `estimate_breakdown`
+          description: 'Billing metadata for the new run preview. **Metered** orgs include nested `estimate_breakdown`
             (NPC/evaluator/external/compute lines), `effective_rounds`, `scenario_type_used`, `global_config_version`,
-            etc.
+            and optional min/max billable intervals. **Fixed-price** orgs set `pricing: fixed`, `price_book_version`,
+            `quote_breakdown` (run fee, per-tag lines, catalogue multiplier), `tags`, and `num_runs`.
+            Missing skill tags set `canStart: false` and `blockCode: fixed_price_missing_tags`.
 
             '
         newGenerationEstimatedCredits:
@@ -4198,29 +4210,26 @@ components:
       - skill_tag
       - description
       - qna
+      description: 'A Q&A publish. The stored tag is always category `qna_custom`, with a fixed testing
+        method and no comments. Other fields are not part of this request.
+
+        '
       properties:
         skill_tag:
           type: string
+          maxLength: 64
           description: Canonical tag name (must not collide with a global catalogue tag).
         description:
           type: string
           minLength: 10
-        testing_method:
-          type: string
-          minLength: 10
-          default: Ask factual recall questions from the registered QnA benchmark.
-        category:
-          type: string
-          default: qna_custom
+          maxLength: 1000
         qna_file:
           type: string
           nullable: true
           description: Optional filename hint for stored QnA JSON.
-        comments:
-          type: string
-          nullable: true
         qna:
           type: object
+          additionalProperties: false
           required:
           - questions
           properties:
@@ -4228,7 +4237,24 @@ components:
               type: array
               minItems: 1
               items:
-                $ref: '#/components/schemas/QnaQuestionItem'
+                type: object
+                additionalProperties: false
+                required:
+                - question
+                - correct_answer
+                properties:
+                  question:
+                    type: string
+                    minLength: 1
+                    maxLength: 4000
+                    description: Sent to the agent under test as one interviewer message.
+                  correct_answer:
+                    type: string
+                    minLength: 1
+                    maxLength: 4000
+                  is_hallucination_trap:
+                    type: boolean
+                    default: false
         qna_user_edited:
           type: boolean
           default: false
@@ -4236,6 +4262,13 @@ components:
           type: boolean
           default: false
           description: When true, validate only — no writes to master-data storage.
+        replace_existing:
+          type: boolean
+          default: false
+          description: 'Accepted when the caller confirms a name already in use. An existing tag still
+            keeps its questions, and a built-in name is still refused.
+
+            '
     RegisterClientQnaResponse:
       type: object
       required:
@@ -4545,6 +4578,12 @@ components:
             - interview
           description: 'Scenario types that may use this tag. Empty array means not selectable. When omitted,
             treat as both info_exchange and interview (UI backward compat).
+
+            '
+        requires_authored_file:
+          type: boolean
+          description: 'True when the tag is tested on a file its NPC sends. A generation request that
+            selects it may give that file a short topic in `tag_files`. Omitted when false.
 
             '
         custom:
