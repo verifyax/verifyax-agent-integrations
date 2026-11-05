@@ -46,10 +46,10 @@ CURATED_OPERATION_IDS = frozenset(
         "getScenarioJob",
         # Jobs — generic async poll
         "getJob",
-        # Engine — cost preview, run, evaluate
+        # Engine — cost preview and run (the run triggers evaluation; the gateway
+        # removed the standalone POST /engine/evaluate/trigger operation).
         "previewWorkspaceCredits",
         "simulateScenario",
-        "triggerEvaluation",
         # Simulations — list, poll a run, fetch the evaluation
         "listSimulations",
         "getSimulation",
