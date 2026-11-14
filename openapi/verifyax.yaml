@@ -454,6 +454,7 @@ paths:
                 - question: What is salsa?
                   correct_answer: A partner dance with Afro-Cuban roots.
                   is_hallucination_trap: false
+                  is_false_premise: false
       responses:
         "201":
           description: Created scenario with scenario_creation job
@@ -875,15 +876,15 @@ paths:
       tags: [Scenarios]
       summary: Get scenario artifacts JSON
       description: >
-        Downloads `scenario.json` (or legacy `benchmark.json` for corpus-linked rows) from storage.
-        **404** when `definition_bucket_path` is unset or the file is missing.
+        Downloads `scenario.json` from storage.
+        **404** when `definition_bucket_path` is unset, the file is missing, or the scenario is corpus-linked.
       operationId: getScenarioArtifacts
       parameters:
         - $ref: "#/components/parameters/XRequestId"
         - $ref: "#/components/parameters/ScenarioUuid"
       responses:
         "200":
-          description: Parsed scenario.json (or legacy benchmark.json) object
+          description: Parsed scenario.json object
           content:
             application/json:
               schema:
@@ -1756,6 +1757,21 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/GatewayError"
+        "503":
+          description: >
+            We could not check that the agent is reachable because of an error on our side, so
+            no run started. The agent may be fine; retry after a short wait. Unlike a 409, this
+            says nothing about the agent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+              example:
+                error: service_unavailable
+                message: >-
+                  We could not check that the agent is reachable because of an error on our
+                  side, so this run did not start. The agent may be fine. Try again in a minute.
+                request_id: 33333333-3333-3333-3333-333333333333
 
   /v1/engine/verify/nfr:
     post:
@@ -1817,6 +1833,15 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/GatewayError"
+        "503":
+          description: >
+            An error on our side stopped the start, for example the reach check could not run,
+            so no run started. The agent may be fine; retry after a short wait. Unlike a 409,
+            this says nothing about the agent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
 
   /v1/engine/verify/nfr/domain/start:
     post:
@@ -2283,7 +2308,7 @@ paths:
       tags: [Simulations]
       summary: Download run artifact file
       description: >
-        Downloads a binary artifact persisted for a simulation run (transcripts, evidence files, evaluation artifacts). The `path` query parameter is relative to the run directory and must start with `files/` (for example `files/messages/round_1/1_report.pdf`). Tenant scope is derived from your API key, so `organization_uuid`/`workspace_uuid` are not supplied.
+        Downloads a binary artifact persisted for a simulation run (transcripts, evidence files, evaluation artifacts). The `path` query parameter is relative to the run directory and must start with `files/`, and a run's files are stored at `files/<artifact_id>/<sha256>/<name>` (for example `files/report/2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae/report.pdf`). Tenant scope is derived from your API key, so `organization_uuid`/`workspace_uuid` are not supplied.
       operationId: downloadSimulationFile
       parameters:
         - $ref: "#/components/parameters/XRequestId"
@@ -2320,8 +2345,8 @@ paths:
       tags: [Simulations]
       summary: Get simulation structured output JSON
       description: >
-        Returns the stored simulation output document (`response.json` / ScenarioOutput) for
-        a completed run. Tenant scope is derived from your API key — do not send
+        Returns the stored simulation output document (`response.json`, a `SimulationOutput`) for
+        a completed run. **404** for a run whose stored output is in the playground's format. Tenant scope is derived from your API key — do not send
         `organization_uuid` or `workspace_uuid` query parameters on the public surface.
       operationId: getSimulationOutput
       parameters:
@@ -2501,9 +2526,8 @@ paths:
       tags: [Scenarios]
       summary: Validate JSON payload against scenario schema
       description: >
-        Validates a JSON **string** against the scenario model a run would load it as (`schema: scenario`,
-        default): a document in the engine's own format is checked as that format, and any other as a
-        Playground scenario. Always returns **200** with a human-readable `result` field (`VALID` / `INVALID` and error
+        Validates a JSON **string** as a `SimulationInput`, the scenario format a run loads (`schema: scenario`,
+        default). Always returns **200** with a human-readable `result` field (`VALID` / `INVALID` and error
         lines); malformed JSON or schema violations are expressed in `result`, not via 4xx.
       operationId: validateJsonPayload
       parameters:
@@ -2625,6 +2649,7 @@ paths:
                   - question: What is salsa?
                     correct_answer: A partner dance with Afro-Cuban roots.
                     is_hallucination_trap: false
+                    is_false_premise: false
               dry_run: false
       responses:
         "200":
@@ -3477,6 +3502,17 @@ components:
         is_hallucination_trap:
           type: boolean
           default: false
+          description: >
+            True when the question has no supported answer. A correct reply refuses
+            to invent one. Cannot be combined with is_false_premise.
+        is_false_premise:
+          type: boolean
+          default: false
+          description: >
+            True when the question states a false assumption about a real topic.
+            correct_answer is the supported correction. A correct reply rejects the
+            assumption and gives that correction. Cannot be combined with
+            is_hallucination_trap.
 
     TagRecommendationPublicRequest:
       type: object
@@ -4682,6 +4718,15 @@ components:
           format: uuid
           nullable: true
           description: Correlates batched or multi-run executions in the UI and APIs.
+        skipped_runs:
+          type: integer
+          description: Runs that did not start because their conversation type failed its last connection check. The rest of the request started. `0` when nothing was skipped.
+          example: 0
+        skipped_notice:
+          type: string
+          nullable: true
+          description: A sentence for the person who started the runs, saying how many runs were skipped and why. `null` when nothing was skipped.
+          example: null
 
     StartNfrVerificationRequest:
       type: object
@@ -5699,6 +5744,17 @@ components:
                   is_hallucination_trap:
                     type: boolean
                     default: false
+                    description: >
+                      True when the question has no supported answer. A correct reply
+                      refuses to invent one. Cannot be combined with is_false_premise.
+                  is_false_premise:
+                    type: boolean
+                    default: false
+                    description: >
+                      True when the question states a false assumption about a real
+                      topic. correct_answer is the supported correction. A correct reply
+                      rejects the assumption and gives that correction. Cannot be
+                      combined with is_hallucination_trap.
         qna_user_edited:
           type: boolean
           default: false
@@ -5711,7 +5767,8 @@ components:
           default: false
           description: >
             Accepted when the caller confirms a name already in use. An existing tag still
-            keeps its questions, and a built-in name is still refused.
+            keeps its question text and reference answers. A republish may correct
+            is_hallucination_trap and is_false_premise. A built-in name is still refused.
 
     RegisterClientQnaResponse:
       type: object

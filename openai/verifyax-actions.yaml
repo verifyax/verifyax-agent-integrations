@@ -22,7 +22,7 @@ info:
   x-verifyax-source:
     source: https://console.verifyax.com/openapi.yaml
     spec_version: 1.0.0
-    spec_sha256: cdd5a0e3cc7668dd2d955307034d310f5aa90ebac7e34c1b2ef6c1fe11d60f3c
+    spec_sha256: 6e2ac2d4b860f40aae7a70f7f002760e172cbcb016ea28f6178c66ef03404524
     surface: curated
 servers:
 - url: https://console.verifyax.com/api/v1
@@ -334,6 +334,21 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/GatewayError'
+        '503':
+          description: 'We could not check that the agent is reachable because of an error on our side,
+            so no run started. The agent may be fine; retry after a short wait. Unlike a 409, this says
+            nothing about the agent.
+
+            '
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+              example:
+                error: service_unavailable
+                message: We could not check that the agent is reachable because of an error on our side,
+                  so this run did not start. The agent may be fine. Try again in a minute.
+                request_id: 33333333-3333-3333-3333-333333333333
   /engine/workspace-credit-preview:
     post:
       tags:
@@ -1589,6 +1604,18 @@ components:
         is_hallucination_trap:
           type: boolean
           default: false
+          description: 'True when the question has no supported answer. A correct reply refuses to invent
+            one. Cannot be combined with is_false_premise.
+
+            '
+        is_false_premise:
+          type: boolean
+          default: false
+          description: 'True when the question states a false assumption about a real topic. correct_answer
+            is the supported correction. A correct reply rejects the assumption and gives that correction.
+            Cannot be combined with is_hallucination_trap.
+
+            '
     TagRecommendationPublicRequest:
       type: object
       required:
@@ -2869,6 +2896,17 @@ components:
           format: uuid
           nullable: true
           description: Correlates batched or multi-run executions in the UI and APIs.
+        skipped_runs:
+          type: integer
+          description: Runs that did not start because their conversation type failed its last connection
+            check. The rest of the request started. `0` when nothing was skipped.
+          example: 0
+        skipped_notice:
+          type: string
+          nullable: true
+          description: A sentence for the person who started the runs, saying how many runs were skipped
+            and why. `null` when nothing was skipped.
+          example: null
     StartNfrVerificationRequest:
       type: object
       description: 'Start an async NFR verification run. The gateway injects `organization_uuid`, `workspace_uuid`,
@@ -3996,6 +4034,18 @@ components:
                   is_hallucination_trap:
                     type: boolean
                     default: false
+                    description: 'True when the question has no supported answer. A correct reply refuses
+                      to invent one. Cannot be combined with is_false_premise.
+
+                      '
+                  is_false_premise:
+                    type: boolean
+                    default: false
+                    description: 'True when the question states a false assumption about a real topic.
+                      correct_answer is the supported correction. A correct reply rejects the assumption
+                      and gives that correction. Cannot be combined with is_hallucination_trap.
+
+                      '
         qna_user_edited:
           type: boolean
           default: false
@@ -4007,7 +4057,8 @@ components:
           type: boolean
           default: false
           description: 'Accepted when the caller confirms a name already in use. An existing tag still
-            keeps its questions, and a built-in name is still refused.
+            keeps its question text and reference answers. A republish may correct is_hallucination_trap
+            and is_false_premise. A built-in name is still refused.
 
             '
     RegisterClientQnaResponse:
