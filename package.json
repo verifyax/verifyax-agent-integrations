@@ -18,8 +18,8 @@
   },
   "homepage": "https://github.com/verifyax/verifyax-agent-integrations#readme",
   "devDependencies": {
-    "@google/genai": "3.0.0",
-    "@redocly/cli": "2.76.0",
+    "@google/genai": "3.3.0",
+    "@redocly/cli": "2.78.0",
     "typescript": "7.0.2"
   }
 }
