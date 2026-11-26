@@ -22,7 +22,7 @@ info:
   x-verifyax-source:
     source: https://console.verifyax.com/openapi.yaml
     spec_version: 1.0.0
-    spec_sha256: cdd5a0e3cc7668dd2d955307034d310f5aa90ebac7e34c1b2ef6c1fe11d60f3c
+    spec_sha256: ea3398784c91507930095e7e44f47c63d17bb5c9e92d9f2f4a3fe84774ff4819
     surface: curated
 servers:
 - url: https://console.verifyax.com/api/v1
@@ -38,8 +38,17 @@ tags:
   description: Async Celery-backed jobs (scenario creation, engine runs, evaluations, etc.).
 - name: Agents
   description: Registered agent endpoints (A2A, API, extension) and connectivity tests.
+- name: Assurance
+  description: Where each agent stands against the regulatory and security frameworks its risk owner chose,
+    one control at a time, from findings and the tests runs measured in the last 90 days.
 - name: Engine
   description: Start simulation runs and preview credits.
+- name: Readiness
+  description: 'An agent''s non-functional (Readiness) standing across runs: health panel, run history,
+    findings and their workflow, framework coverage and regulatory evidence. Also scheduled non-functional
+    runs. Start a run with `POST /v1/engine/verify/nfr`.
+
+    '
 - name: Billing
   description: Read-only billing balances for API-key tenants.
 - name: Simulations
@@ -334,6 +343,21 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/GatewayError'
+        '503':
+          description: 'We could not check that the agent is reachable because of an error on our side,
+            so no run started. The agent may be fine; retry after a short wait. Unlike a 409, this says
+            nothing about the agent.
+
+            '
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+              example:
+                error: service_unavailable
+                message: We could not check that the agent is reachable because of an error on our side,
+                  so this run did not start. The agent may be fine. Try again in a minute.
+                request_id: 33333333-3333-3333-3333-333333333333
   /engine/workspace-credit-preview:
     post:
       tags:
@@ -1271,12 +1295,42 @@ components:
       schema:
         type: string
         format: uuid
+    FindingUuid:
+      name: finding_uuid
+      in: path
+      required: true
+      description: UUID of a persisted finding, from `GET /v1/agents/{agent_uuid}/nfr/findings`.
+      schema:
+        type: string
+        format: uuid
+    ScheduleId:
+      name: id
+      in: path
+      required: true
+      description: Identifier of a scheduled run, from `GET /v1/scheduled-nfr-runs`.
+      schema:
+        type: string
   responses:
     Unauthorized:
       description: '**401** — API key missing, malformed `Authorization` header, or key not recognised.
         Response body uses `ErrorMessage` when JSON is returned.
 
         '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorMessage'
+    Forbidden:
+      description: '**403** — the API key''s role does not allow this action, or the resource belongs
+        to another workspace.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorMessage'
+    NotFound:
+      description: '**404** — no such resource in the API key''s workspace.'
       content:
         application/json:
           schema:
@@ -1586,9 +1640,26 @@ components:
           type: string
         correct_answer:
           type: string
+        kind:
+          type: string
+          enum:
+          - formal
+          - hallucination_trap
+          - false_premise
+          default: formal
+          description: 'Question kind. formal is a normal factual question. hallucination_trap has no
+            supported answer. false_premise states a false assumption; correct_answer is the supported
+            correction.
+
+            '
         is_hallucination_trap:
           type: boolean
-          default: false
+          deprecated: true
+          description: Legacy input only. Prefer kind. Normalized at the API boundary.
+        is_false_premise:
+          type: boolean
+          deprecated: true
+          description: Legacy input only. Prefer kind. Normalized at the API boundary.
     TagRecommendationPublicRequest:
       type: object
       required:
@@ -2869,6 +2940,17 @@ components:
           format: uuid
           nullable: true
           description: Correlates batched or multi-run executions in the UI and APIs.
+        skipped_runs:
+          type: integer
+          description: Runs that did not start because their conversation type failed its last connection
+            check. The rest of the request started. `0` when nothing was skipped.
+          example: 0
+        skipped_notice:
+          type: string
+          nullable: true
+          description: A sentence for the person who started the runs, saying how many runs were skipped
+            and why. `null` when nothing was skipped.
+          example: null
     StartNfrVerificationRequest:
       type: object
       description: 'Start an async NFR verification run. The gateway injects `organization_uuid`, `workspace_uuid`,
@@ -2883,12 +2965,23 @@ components:
           format: uuid
           description: Registered agent whose `agent_url` is the load-test target.
         nfr_config:
+          $ref: '#/components/schemas/NfrRunConfig'
+        retest_of:
           type: object
-          description: NFR preset, probes, overlays, and load profile passed to the engine worker. A load
-            field you leave out takes the preset's own default, which is the shape the run screen sends,
-            so naming only the nfr-full preset runs 240s with isolation stress. A `mode` the preset cannot
-            run as is refused with 422 before anything is reserved or charged.
-          additionalProperties: true
+          nullable: true
+          description: 'The persisted finding this run re-checks, so the run that settles a fixed claim
+            carries the reference. Use the finding''s `dimension` and `kind` from `GET /v1/agents/{agent_uuid}/nfr/findings`.
+
+            '
+          required:
+          - dimension
+          - kind
+          additionalProperties: false
+          properties:
+            dimension:
+              type: string
+            kind:
+              type: string
         auth_override:
           type: object
           nullable: true
@@ -2901,6 +2994,500 @@ components:
             and load-bearing segment runs.
 
             '
+    NfrRunConfig:
+      type: object
+      additionalProperties: false
+      description: 'What the run tests and how hard. Only `preset` matters for most runs: every other
+        field is optional, and a field you leave out takes the preset''s own default, which is what the
+        reports are calibrated against. A field that does not apply to the preset is ignored or refused
+        with 422 before anything is reserved or charged. These are the same settings as the Readiness
+        page''s advanced parameters.
+
+        '
+      properties:
+        preset:
+          type: string
+          default: nfr-standard
+          enum:
+          - smoke
+          - nfr-standard
+          - nfr-full
+          - capacity
+          - behavioral-prompt-injection
+          - behavioral-manipulation
+          - behavioral-controlled-probes
+          - behavioral-conversational-safety
+          - compliance
+          - bias-fairness
+          description: 'The report to produce. `smoke` is the Health Check; `nfr-standard` and `nfr-full`
+            are Release Check and Full Release Audit; `capacity` is Load Capacity. The behavioral presets
+            are Prompt Injection Resistance, Manipulation Resistance, Policy Conduct, Conversational Safety,
+            Regulation Awareness (`compliance`) and Bias & Fairness. Each produces exactly one report
+            type. Any API key can request every preset in this list, including presets the Readiness page
+            does not show in your environment: what the page shows is a display setting, not a permission.
+            A start can still be refused because of the target, not the key. A run that puts load on the
+            agent needs `ownership_attested` (400 without it). If your organization requires domain verification,
+            the agent''s host must be verified first (403 `domain_not_verified`; see `POST /v1/engine/verify/nfr/domain/start`).
+
+            '
+        overlays:
+          type: array
+          description: 'Regulatory regimes to score. Required on `compliance`, with at least one entry,
+            and refused on every other preset.
+
+            '
+          items:
+            type: string
+            enum:
+            - gdpr
+            - pci
+            - hipaa
+            - soc2
+            - ccpa
+            - coppa
+            - glba
+            - ferpa
+            - nist_ai_rmf
+            - eu_ai_act
+            - ofac
+        load:
+          $ref: '#/components/schemas/NfrLoadProfile'
+        caps:
+          type: object
+          additionalProperties:
+            type: string
+          description: 'Load segment parameters as `segment.knob` keys with string values, on `capacity`
+            and `nfr-full`: `knee.stages` (comma-separated user counts, default `1,5,10,25,50`), `knee.step_seconds`
+            (180), `spike.users` (10), `spike.baseline_secs` (30), `spike.burst_secs` (60), `spike.recovery_secs`
+            (120), `soak.users` (20), `soak.secs` (600), `isolation_stress.users` (100; 150 on `nfr-full`)
+            and `isolation_stress.secs` (60; 90 on `nfr-full`).
+
+            '
+          example:
+            knee.stages: 1,5,10,25
+            soak.secs: '900'
+        test_skills:
+          type: array
+          items:
+            type: string
+          description: 'A2A agents: the agent card skill ids to probe and load. Leave it out to test every
+            skill. A skill left out is absent from the report, not passed.
+
+            '
+        skill_tier_overrides:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+            - interactive
+            - tool_using
+            - batch
+          description: '`nfr-standard`, `nfr-full` and `capacity`: the latency tier to grade a skill against,
+            keyed by skill id, when the automatic tier is wrong.
+
+            '
+        skill_slo_overrides:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: integer
+          description: '`nfr-standard`, `nfr-full` and `capacity`: custom latency budgets in milliseconds,
+            keyed by skill id, with `p50`, `p95`, `p99` and optionally `ttft`. A skill needs all three
+            of p50, p95 and p99, or it falls back to its automatic tier.
+
+            '
+          example:
+            search:
+              p50: 1500
+              p95: 4000
+              p99: 8000
+        latency_slo:
+          type: object
+          additionalProperties:
+            type: integer
+          description: '`nfr-standard`, `nfr-full` and `capacity`: budgets in milliseconds (`p50`, `p95`,
+            `p99`, `ttft`) for skills whose tier cannot be classified.
+
+            '
+        max_agent_requests:
+          type: integer
+          minimum: 1
+          description: 'A hard ceiling on requests sent to the agent across probes and load. The run stops
+            sending when it reaches it, and the report says so. Defaults: 3000 on `nfr-standard`; 5000
+            on `nfr-full`, `capacity`, `behavioral-prompt-injection` and `bias-fairness`; 1500 otherwise.
+
+            '
+        probe_flags:
+          type: array
+          items:
+            type: string
+          description: 'Optional probe sub-lanes, each scoped to one preset, and refused on any other.
+            `nfr-standard` and `nfr-full`: the memory-poisoning tails `memory-poisoning-semantic`, `memory-poisoning-tool`,
+            `memory-poisoning-clear`, `memory-poisoning-clear-tool` and `memory-poisoning-cross-tenant`
+            (needs `foreign_tenant_token`). `behavioral-conversational-safety`: at most one cascading-chain
+            depth, `cascading-chain-paraphrase`, `cascading-chain-multilingual`, `cascading-chain-escalate`,
+            `cascading-chain-adaptive`, `cascading-chain-adaptive-openended` or `cascading-chain-adaptive-parallel`.
+            `bias-fairness`: the extended axes `bias-3axis`, `bias-disability`, `bias-parental`, `bias-religion`,
+            `bias-veteran`, `bias-orientation`, `bias-national-origin`, `bias-genetic` and `bias-marital`.
+
+            '
+        low_priv_token:
+          type: string
+          description: '`nfr-standard` and `nfr-full`: a bearer token for a lower-privilege principal
+            in the same tenant, so Security can test the authorization boundary. Used for this run only
+            and never stored.
+
+            '
+        foreign_tenant_token:
+          type: string
+          description: '`nfr-standard` and `nfr-full`: a bearer token for a second tenant or account you
+            own on this agent. It runs the tenant access-control lane of Concurrency & Isolation, which
+            does not rely on the agent repeating planted markers. Used for this run only and never stored.
+
+            '
+        foreign_tenant_expectation:
+          type: string
+          enum:
+          - refused
+          - data_scoped
+          description: 'What `foreign_tenant_token` should get from the agent. `data_scoped` (what the
+            Readiness page sends): the agent may serve that tenant, and fails only if a reply carries
+            this tenant''s planted record. `refused`: any successful reply fails. The engine default,
+            when the field is left out, is `refused`.
+
+            '
+        idor_other_resource_id:
+          type: string
+          description: '`nfr-standard` and `nfr-full`: a resource id owned by another tenant, for the
+            object-level access-control lane. Send it with `idor_other_resource_fingerprint`, or the lane
+            does not run.
+
+            '
+        idor_other_resource_fingerprint:
+          type: string
+          description: A non-public string that appears only in that resource, so a leak can be proved.
+        horizontal_other_user_id:
+          type: string
+          description: '`nfr-standard` and `nfr-full`: another user''s id in your tenant, for the same-tenant
+            access-control lane. Send it with `horizontal_other_user_fingerprint`.
+
+            '
+        horizontal_other_user_fingerprint:
+          type: string
+          description: A string unique to that user's records.
+        cold_start_ladder:
+          type: string
+          enum:
+          - short
+          - extended
+          description: '`nfr-standard`, `nfr-full` and `capacity`: how long the agent idles before its
+            first call is timed. `short` (default) idles 0/5/10/20/30 s. `extended` idles 0/30/60/300/900
+            s, so a scale-to-zero agent is measured cold, and adds about 20 billed minutes.
+
+            '
+        expected_response_time_sec:
+          type: number
+          minimum: 0.1
+          maximum: 120
+          description: 'Any preset: how long the agent usually takes to reply. The run already allows
+            for about 2.5 s; a higher value gives a slow agent a longer time limit and raises the estimate.
+
+            '
+        judge_consensus:
+          type: boolean
+          description: Set to false to turn off judge consensus, which is on by default.
+        mode:
+          type: string
+          enum:
+          - structural
+          - behavioral
+          description: Set by the preset. A mode the preset cannot run as is refused with 422.
+        probes:
+          type: array
+          items:
+            type: string
+          description: Advanced. Extra probe or bundle tokens to run.
+        skip_probes:
+          type: array
+          items:
+            type: string
+          description: Advanced. Probe tokens to skip.
+      example:
+        preset: nfr-full
+        load:
+          segments:
+          - isolation_stress
+        caps:
+          isolation_stress.users: '100'
+          isolation_stress.secs: '60'
+        max_agent_requests: 4000
+        probe_flags:
+        - memory-poisoning-semantic
+        cold_start_ladder: extended
+    NfrLoadProfile:
+      type: object
+      additionalProperties: false
+      description: 'The load phase. Behavioral presets ignore `users` and `spawn_rate`, and only `behavioral-prompt-injection`
+        keeps a load phase at all (on A2A agents). A run with more than 3 users, spawn rate above 3, more
+        than 60 seconds or any segment needs `ownership_attested`, even on `smoke`.
+
+        '
+      properties:
+        users:
+          type: integer
+          minimum: 1
+          description: Steady concurrent users. Default 2 on `smoke`, 10 otherwise.
+        spawn_rate:
+          type: number
+          exclusiveMinimum: 0
+          description: Users added per second while ramping up. Default 2.
+        run_time_sec:
+          type: integer
+          minimum: 1
+          description: How long load is held. Default 30 on `smoke`, 300 on `capacity`, 240 otherwise.
+        segments:
+          type: array
+          items:
+            type: string
+            enum:
+            - knee
+            - spike
+            - soak
+            - isolation_stress
+          description: 'Extra load shapes after the baseline. `capacity` runs `knee` and `spike` by default
+            and accepts all four; `nfr-full` runs `isolation_stress` by default and accepts only that
+            one. Soak runs on A2A agents only. An empty list turns the defaults off.
+
+            '
+        knee_max_users:
+          type: integer
+          minimum: 1
+          description: '`capacity`: the top of the knee ramp. Defaults to the agent card''s `capabilities.maxConcurrentUsers`,
+            else 50.
+
+            '
+    NfrAgentPanelResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+        hero:
+          type: string
+          nullable: true
+          description: The headline report family for this agent.
+        families:
+          type: array
+          description: One entry per report family, with its latest run, score, band and dimension bands.
+          items:
+            type: object
+            additionalProperties: true
+        run_count:
+          type: integer
+        posture:
+          type: object
+          additionalProperties: true
+          description: Standing across the agent's persisted findings, not any single run's score.
+    NfrAgentHistoryResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+        families:
+          type: array
+          description: Runs grouped by report family, newest first, each with `simulation_uuid`, score,
+            band and findings split.
+          items:
+            type: object
+            additionalProperties: true
+        run_count:
+          type: integer
+        truncated:
+          type: boolean
+    NfrAgentCoverageResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+        frameworks:
+          type: object
+          description: Per framework, the probe categories that map to it and when each was last tested.
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              additionalProperties: true
+        tracked_run_count:
+          type: integer
+        terminal_run_count:
+          type: integer
+        run_type_count:
+          type: integer
+    NfrAgentRegulatoryEvidenceResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+        frameworks:
+          type: array
+          description: Per regime, the evidence items and the mechanism behind each.
+          items:
+            type: object
+            additionalProperties: true
+        evidenced_run_count:
+          type: integer
+        terminal_run_count:
+          type: integer
+    NfrAgentFindingsResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/NfrPersistedFinding'
+        posture:
+          type: object
+          additionalProperties: true
+        total:
+          type: integer
+        available:
+          type: boolean
+          description: False when findings tracking is not set up in this environment yet.
+    NfrAgentFindingResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+        finding:
+          $ref: '#/components/schemas/NfrPersistedFinding'
+    NfrPersistedFinding:
+      type: object
+      additionalProperties: true
+      description: A finding tracked across runs. The fields listed are the ones most clients need.
+      properties:
+        finding_uuid:
+          type: string
+          description: Use as `finding_uuid` in the finding paths.
+        dimension:
+          type: string
+        kind:
+          type: string
+          description: The finding type, as listed in the Finding Reference.
+        title:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+          enum:
+          - regressed
+          - open
+          - fixed_pending_retest
+          - stale
+          - fixed
+        workflow_status:
+          type: string
+          description: The owner state, for example `unassigned`, `assigned`, `in_progress` or `verified`.
+        assignee_user_uuid:
+          type: string
+          nullable: true
+        remediation:
+          type: string
+          nullable: true
+        retest_preset:
+          type: string
+          nullable: true
+          description: The preset whose report scores this finding, so a retest knows what to run.
+        last_seen_simulation_uuid:
+          type: string
+          nullable: true
+    RecurrenceRule:
+      type: object
+      nullable: true
+      required:
+      - frequency
+      properties:
+        frequency:
+          type: string
+          enum:
+          - hourly
+          - daily
+          - weekly
+          - biweekly
+          - monthly
+        end_date:
+          type: string
+          format: date-time
+          description: Optional. No runs are scheduled after this time.
+    CreateScheduledNfrRunRequest:
+      type: object
+      required:
+      - scheduled_at
+      - payload
+      properties:
+        scheduled_at:
+          type: string
+          format: date-time
+          description: When the first run starts.
+        recurrence_rule:
+          $ref: '#/components/schemas/RecurrenceRule'
+        payload:
+          type: object
+          required:
+          - agent_uuid
+          - nfr_config
+          description: The same fields as `POST /v1/engine/verify/nfr`.
+          properties:
+            agent_uuid:
+              type: string
+              format: uuid
+            nfr_config:
+              $ref: '#/components/schemas/NfrRunConfig'
+            ownership_attested:
+              type: boolean
+    ScheduledNfrRun:
+      type: object
+      properties:
+        id:
+          type: string
+        job_type:
+          type: string
+          enum:
+          - nfr_verification
+        scheduled_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+          - pending
+          - running
+          - completed
+          - failed
+          - cancelled
+        payload:
+          type: object
+          additionalProperties: true
+        recurrence_rule:
+          $ref: '#/components/schemas/RecurrenceRule'
+        result:
+          type: object
+          nullable: true
+          additionalProperties: true
+        last_error:
+          type: string
+          nullable: true
+        created_by:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     StartNfrVerificationResponse:
       type: object
       description: Acknowledgement from the NFR start endpoint — async work continues under `job_uuid`.
@@ -2970,6 +3557,713 @@ components:
         instructions:
           type: string
           description: Operator-facing steps to publish the TXT record and re-check.
+    AssuranceStateCounts:
+      type: object
+      description: How many controls are in each state.
+      properties:
+        open:
+          type: integer
+        awaiting_retest:
+          type: integer
+        tested_clean:
+          type: integer
+        partly_tested:
+          type: integer
+        not_tested:
+          type: integer
+        needs_evidence:
+          type: integer
+    AssuranceControl:
+      type: object
+      description: One control and its state for one agent.
+      properties:
+        control_id:
+          type: string
+          description: e.g. eu_ai_act.art_15_5
+        ref:
+          type: string
+          description: The reference as the framework writes it, e.g. Art. 15(5).
+        name:
+          type: string
+          description: What the control asks for
+          in plain language.: null
+        group:
+          type: string
+          nullable: true
+        reach:
+          type: string
+          enum:
+          - tested
+          - customer_evidence
+          description: Whether a VerifyAX test can show the control holds, or only the customer's own
+            evidence can.
+        evidence_note:
+          type: string
+          nullable: true
+        citation:
+          type: string
+          description: How findings cite the control.
+        state:
+          type: string
+          enum:
+          - open
+          - awaiting_retest
+          - tested_clean
+          - partly_tested
+          - not_tested
+          - needs_evidence
+        next_action:
+          type: string
+          enum:
+          - view_findings
+          - retest
+          - none
+          - run_tests
+          - provide_evidence
+        tested_by:
+          type: object
+          properties:
+            skills:
+              type: array
+              items:
+                type: string
+            nf_finding_kinds:
+              type: array
+              items:
+                type: string
+            nf_presets:
+              type: array
+              items:
+                type: string
+              description: The NF presets whose run measures any of those NF finding kinds, the one that
+                measures most first. Full Release Audit follows Release Check, whose tests it runs.
+        suggested_presets:
+          type: array
+          items:
+            type: string
+          description: When the control needs tests run, the NF presets whose run can measure some of
+            its untested NF checks, the one that measures most first. Empty when no preset can, or the
+            control needs no run.
+        untested_skills:
+          type: array
+          items:
+            type: string
+          description: When the control needs tests run, its skill tags no simulation measured in the
+            window.
+        tests_total:
+          type: integer
+          description: Every test that can reach the control.
+        tests_measured:
+          type: integer
+          description: Tests a run measured in the window.
+        last_tested_at:
+          type: string
+          format: date-time
+          nullable: true
+        open_findings:
+          type: array
+          items:
+            type: string
+            format: uuid
+        awaiting_retest_findings:
+          type: array
+          items:
+            type: string
+            format: uuid
+        fixed_findings:
+          type: array
+          items:
+            type: string
+            format: uuid
+    AssuranceRun:
+      type: object
+      description: One run in the window, an NF run or a simulation that recorded the skills it tested.
+      properties:
+        simulation_uuid:
+          type: string
+          format: uuid
+        completed_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+        source:
+          type: string
+          enum:
+          - nf_run
+          - simulation
+        report_type:
+          type: string
+          nullable: true
+        preset:
+          type: string
+          nullable: true
+        coverage_recorded:
+          type: boolean
+          description: False for a run that did not record what it measured, or whose findings were never
+            added to the agent's findings, such as an aborted or failed run; it counts toward no control.
+        controls_tested:
+          type: array
+          items:
+            type: string
+        findings_seen:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Findings this run was the last to see.
+    AssuranceFinding:
+      type: object
+      additionalProperties: true
+      description: A finding in the Readiness finding shape, plus where it came from, the controls it
+        counts against, and whether it sets their state.
+      properties:
+        finding_uuid:
+          type: string
+          format: uuid
+        source:
+          type: string
+          enum:
+          - nf_run
+          - simulation
+        controls:
+          type: array
+          items:
+            type: string
+        counts_toward_state:
+          type: boolean
+          description: False for a fixed finding, or one last seen before the window.
+    AgentAssuranceResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+          format: uuid
+        registry_version:
+          type: string
+        window_days:
+          type: integer
+        nf_runnable:
+          type: boolean
+          description: Whether Readiness can start an NF run on this agent. It needs the agent's URL;
+            without one, Assurance offers no run or retest.
+        frameworks_are_default:
+          type: boolean
+        frameworks:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              label:
+                type: string
+              edition:
+                type: string
+              state:
+                type: string
+                enum:
+                - open
+                - awaiting_retest
+                - tested_clean
+                - partly_tested
+                - not_tested
+                - needs_evidence
+              counts:
+                $ref: '#/components/schemas/AssuranceStateCounts'
+              controls_reachable:
+                type: integer
+              controls_with_results:
+                type: integer
+              last_tested_at:
+                type: string
+                format: date-time
+                nullable: true
+              controls:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssuranceControl'
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssuranceFinding'
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssuranceRun'
+        run_tests:
+          type: object
+          description: What to run to test the agent's controls that are not tested yet or only partly
+            tested.
+          properties:
+            presets:
+              type: array
+              description: NF presets that would test at least one such control, most controls first.
+              items:
+                type: object
+                properties:
+                  preset:
+                    type: string
+                    description: NF preset id, as Readiness names it, e.g. nfr-standard.
+                  controls:
+                    type: integer
+                    description: Controls needing tests that a run of this preset would test.
+            skills:
+              type: array
+              description: Skill tags whose simulations would test at least one such control, most controls
+                first.
+              items:
+                type: object
+                properties:
+                  skill:
+                    type: string
+                  controls:
+                    type: integer
+                    description: Controls needing tests that a simulation of this skill would test.
+    ControlAssuranceResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+          format: uuid
+        registry_version:
+          type: string
+        window_days:
+          type: integer
+        nf_runnable:
+          type: boolean
+          description: Whether Readiness can start an NF run on this agent. It needs the agent's URL;
+            without one, Assurance offers no run or retest.
+        framework:
+          type: object
+          properties:
+            code:
+              type: string
+            label:
+              type: string
+            edition:
+              type: string
+        framework_selected:
+          type: boolean
+        control:
+          $ref: '#/components/schemas/AssuranceControl'
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssuranceFinding'
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssuranceRun'
+        runs_that_ran_clean:
+          type: array
+          items:
+            type: object
+            properties:
+              simulation_uuid:
+                type: string
+                format: uuid
+              completed_at:
+                type: string
+                format: date-time
+              source:
+                type: string
+                enum:
+                - nf_run
+                - simulation
+              report_type:
+                type: string
+                nullable: true
+              preset:
+                type: string
+                nullable: true
+              tests_measured:
+                type: integer
+    RegulatoryAcknowledgementReportResponse:
+      type: object
+      description: One Regulation Awareness run, read against the frameworks switched on for the agent.
+      properties:
+        agent_uuid:
+          type: string
+          format: uuid
+        simulation_uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        registry_version:
+          type: string
+        nf_runnable:
+          type: boolean
+          description: Whether the run can be started again on this agent. It needs the agent's URL; without
+            one, Assurance offers no run.
+        measured:
+          type: boolean
+          description: False when the run measured no compliance at all.
+        summary:
+          type: object
+          properties:
+            regimes:
+              type: integer
+              description: Regimes checked
+              leaving out the cross-regime checks they bring.: null
+            checks:
+              type: integer
+            acknowledged:
+              type: integer
+            not_acknowledged:
+              type: integer
+            not_measured:
+              type: integer
+            controls:
+              type: integer
+              description: Distinct controls the checks count toward.
+        regimes:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                description: The overlay, e.g. gdpr, or a cross-regime check such as aibom that some overlays
+                  bring.
+              label:
+                type: string
+              framework:
+                type: string
+                nullable: true
+                description: The framework that brings this regime
+                when one does.: null
+              framework_selected:
+                type: boolean
+              cross_regime:
+                type: boolean
+                description: 'True for a check that regimes bring rather than a regime of its own: the
+                  AI bill of materials, logging completeness or the audit trail.'
+              brought_by:
+                type: array
+                items:
+                  type: string
+                description: For a cross-regime check, the labels of this run's regimes that brought it,
+                  in report order. Empty for a regime.
+              probes:
+                type: integer
+                nullable: true
+              failures:
+                type: integer
+                nullable: true
+              checks:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      description: What the check looks for, e.g. GDPR DSAR (Art. 15).
+                    kind:
+                      type: string
+                      description: The finding kind it raises when not acknowledged.
+                    asked:
+                      type: array
+                      description: What the tester asked for this check on this run, in the order it was
+                        sent. A check that rotates through several questions lists the ones this run reached;
+                        a check the registry does not list shows the questions from its replies.
+                      items:
+                        type: string
+                    attempts:
+                      type: integer
+                      nullable: true
+                    failures:
+                      type: integer
+                      nullable: true
+                    result:
+                      type: string
+                      enum:
+                      - acknowledged
+                      - not_acknowledged
+                      - not_measured
+                    controls:
+                      type: array
+                      description: Controls it counts toward in the agent's chosen frameworks.
+                      items:
+                        type: object
+                        properties:
+                          control_id:
+                            type: string
+                          ref:
+                            type: string
+                          framework:
+                            type: string
+                          framework_label:
+                            type: string
+                    replies:
+                      type: array
+                      description: A few of the agent's replies. For a check it did not acknowledge, the
+                        ones that missed it, as its finding shortened them; for one it acknowledged, whole,
+                        from the run's transcript.
+                      items:
+                        type: object
+                        properties:
+                          asked:
+                            type: string
+                            nullable: true
+                            description: The question the tester sent
+                            as the agent received it.: null
+                          reply:
+                            type: string
+                            nullable: true
+                          reason:
+                            type: string
+                            nullable: true
+    AssurancePortfolioResponse:
+      type: object
+      properties:
+        workspace_uuid:
+          type: string
+          format: uuid
+        registry_version:
+          type: string
+        window_days:
+          type: integer
+        summary:
+          type: object
+          properties:
+            open_controls:
+              type: integer
+            agents_with_open_controls:
+              type: integer
+            agents_needing_attention:
+              type: integer
+              description: Agents with an open or awaiting-retest control.
+            awaiting_retest_controls:
+              type: integer
+            not_tested_controls:
+              type: integer
+        frameworks:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              label:
+                type: string
+        total_agents:
+          type: integer
+          description: Every agent in the workspace. The summary covers all of them; agents holds only
+            the requested page.
+        agents:
+          type: array
+          items:
+            type: object
+            properties:
+              agent_uuid:
+                type: string
+                format: uuid
+              name:
+                type: string
+                nullable: true
+              agent_type:
+                type: string
+                nullable: true
+              nf_runs_in_window:
+                type: integer
+              simulations_in_window:
+                type: integer
+              frameworks_are_default:
+                type: boolean
+              needs_attention:
+                type: boolean
+              frameworks:
+                type: array
+                items:
+                  type: object
+                  description: One framework for one agent. Only `code`, `label` and `selected` are present
+                    when the framework is not chosen.
+                  properties:
+                    code:
+                      type: string
+                    label:
+                      type: string
+                    selected:
+                      type: boolean
+                    state:
+                      type: string
+                      enum:
+                      - open
+                      - awaiting_retest
+                      - tested_clean
+                      - partly_tested
+                      - not_tested
+                      - needs_evidence
+                      nullable: true
+                    counts:
+                      $ref: '#/components/schemas/AssuranceStateCounts'
+                    controls_reachable:
+                      type: integer
+                      nullable: true
+                    controls_with_results:
+                      type: integer
+                      nullable: true
+                    last_tested_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+    AssuranceUsage:
+      type: object
+      additionalProperties: false
+      description: How an agent is used. The Assurance frameworks panel suggests frameworks from it; the
+        suggestions are not a legal ruling on what applies.
+      properties:
+        regions:
+          type: array
+          items:
+            type: string
+            enum:
+            - eu
+            - uk
+            - us
+          description: Where the agent serves people.
+        activities:
+          type: array
+          items:
+            type: string
+            enum:
+            - talks_to_customers
+            - uses_tools
+            - decides_for_people
+          description: 'What it does: talks to customers, uses tools or acts in other systems, or helps
+            decide credit, claims or hiring.'
+        data:
+          type: array
+          items:
+            type: string
+            enum:
+            - personal
+            - payment_card
+            - health
+          description: Data it handles.
+        high_risk:
+          type: boolean
+          description: The owner's own policy treats the agent as high-risk under the EU AI Act.
+    AssuranceFrameworksRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - frameworks
+      properties:
+        frameworks:
+          type: array
+          items:
+            type: string
+          description: Framework codes from the registry. Replaces the saved choice.
+        usage:
+          allOf:
+          - $ref: '#/components/schemas/AssuranceUsage'
+          description: How the agent is used. Replaces the saved profile when given; left as it is when
+            omitted.
+    AssuranceFrameworksResponse:
+      type: object
+      properties:
+        agent_uuid:
+          type: string
+          format: uuid
+        frameworks:
+          type: array
+          items:
+            type: string
+        is_default:
+          type: boolean
+          description: True when nobody has chosen yet and the four launch frameworks are shown.
+        available:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              label:
+                type: string
+              edition:
+                type: string
+        regulatory_acknowledgement:
+          $ref: '#/components/schemas/AssuranceRegulatoryAcknowledgement'
+        usage:
+          $ref: '#/components/schemas/AssuranceUsage'
+        nf_runnable:
+          type: boolean
+          description: Whether a Regulation Awareness run can start on this agent. It needs the agent's
+            URL; without one, Assurance offers no run.
+        previews:
+          type: array
+          description: Every framework as this agent stands against it today, from the findings and runs
+            it already has. What switching a framework on would show, without a new run.
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              controls:
+                type: integer
+                description: Every control in the framework.
+              state:
+                type: string
+                enum:
+                - open
+                - awaiting_retest
+                - tested_clean
+                - partly_tested
+                - not_tested
+                - needs_evidence
+              counts:
+                $ref: '#/components/schemas/AssuranceStateCounts'
+              controls_reachable:
+                type: integer
+              controls_with_results:
+                type: integer
+              last_tested_at:
+                type: string
+                format: date-time
+                nullable: true
+    AssuranceRegulatoryAcknowledgement:
+      type: object
+      description: The regimes a Regulation Awareness run checks for this agent.
+      properties:
+        regimes:
+          type: array
+          description: Regimes the agent's chosen frameworks bring. Always run; empty when no chosen framework
+            has one.
+          items:
+            $ref: '#/components/schemas/AssuranceRegime'
+        optional_regimes:
+          type: array
+          description: Regimes no registry framework covers, which a person may add to a run. Their checks
+            count toward no control.
+          items:
+            $ref: '#/components/schemas/AssuranceRegime'
+        retest_regimes:
+          type: object
+          description: The regime that checks each finding kind, keyed by kind. A retest of a finding
+            always runs its regime, even when the framework that brings it is switched off.
+          additionalProperties:
+            $ref: '#/components/schemas/AssuranceRegime'
+    AssuranceRegime:
+      type: object
+      properties:
+        code:
+          type: string
+          description: The Regulation Awareness overlay, e.g. 'gdpr'.
+        label:
+          type: string
+        framework:
+          type: string
+          nullable: true
+          description: The framework that brings this regime
+          when one does.: null
     NfrReport:
       type: object
       additionalProperties: true
@@ -2994,9 +4288,9 @@ components:
         preset:
           type: string
           nullable: true
-          description: The preset the run launched under, such as nfr-standard (Standard PRR) or nfr-full
-            (Deep PRR). Both PRR presets share report_type structural, so this is the field that tells
-            them apart. Null on older reports and on engine runs started without a preset.
+          description: The preset the run launched under, such as nfr-standard (Release Check) or nfr-full
+            (Full Release Audit). Both PRR presets share report_type structural, so this is the field
+            that tells them apart. Null on older reports and on engine runs started without a preset.
         overall_score:
           type: number
           description: The run's headline score. It is 0.0 when nothing was measured, so read overall_band
@@ -3063,6 +4357,12 @@ components:
           additionalProperties: true
           description: Whether the run is sound enough to read at all. A run voided here has scores that
             must not be taken at face value.
+        measured_finding_kinds:
+          type: array
+          description: The finding kinds this run measured, whether or not they fired. A kind is listed
+            when a probe that can produce it ran and its dimension was measured, or when every run measures
+            it. Empty for a run voided by run_validity. Assurance uses it to tell a control that was tested
+            and found nothing from one nobody tested.
         operational_readiness:
           type: array
           description: Whether each skill reached a working state before it was measured. A skill that
@@ -3080,15 +4380,18 @@ components:
         regulatory_evidence:
           type: object
           additionalProperties: true
-          description: Framework-by-framework evidence drawn from this run, for a reader assembling a
-            compliance case.
+          description: Framework-by-framework evidence drawn from this run, as the engine classified its
+            citations. Assurance reads the same findings as framework controls; see `GET /v1/agents/{agent_uuid}/assurance`.
         scope_classifier:
           type: object
           additionalProperties: true
           description: What the run decided was in scope to measure, and why.
         active_overlays:
           type: array
-          description: Overlays applied to this run, which change what is probed and how.
+          description: Overlays applied to this run, which change what is probed and how. For a Regulation
+            Awareness run started from Assurance, these are the regimes the agent's frameworks bring plus
+            any added; `GET /v1/agents/{agent_uuid}/assurance/reports/{simulation_uuid}` reads the run
+            per regime and check.
         agent_card:
           type: object
           additionalProperties: true
@@ -3224,10 +4527,10 @@ components:
           description: 'The whole dispatch config this run was started with, not a summary of it: preset,
             probes, skipped probes, overlays, mode, load profile, caps, latency SLOs, per-skill tier and
             SLO overrides, selected test skills, request limit, judge consensus, probe flags, cold-start
-            ladder, and the IDOR and horizontal-access resource ids. The four credential fields (`foreign_tenant_token`,
-            `low_priv_token`, `idor_other_resource_fingerprint`, `horizontal_other_user_fingerprint`)
-            are always null here, because they are stripped before the run is stored: a null does not
-            mean the run was started without one.
+            ladder, foreign-tenant expectation (`refused` or `data_scoped`), and the IDOR and horizontal-access
+            resource ids. The four credential fields (`foreign_tenant_token`, `low_priv_token`, `idor_other_resource_fingerprint`,
+            `horizontal_other_user_fingerprint`) are always null here, because they are stripped before
+            the run is stored: a null does not mean the run was started without one.
 
             '
         simulation_outcome:
@@ -3534,16 +4837,40 @@ components:
           description: Per-request timeout in seconds enforced server-side.
     TestCurlAgentRequest:
       type: object
-      description: 'Executes a curl-style command template server-side with sandboxed outbound access;
-        intended for integration smoke tests, not arbitrary shell.
+      description: 'Executes a curl-style agent turn server-side with sandboxed outbound access; intended
+        for integration smoke tests, not arbitrary shell.
 
         '
       required:
-      - curl_command
+      - curl
       properties:
-        curl_command:
-          type: string
-          description: Full curl command line as a single string (quoting rules apply server-side).
+        curl:
+          type: object
+          required:
+          - message
+          properties:
+            session:
+              type: object
+              description: Optional first request that obtains a session id for the message command.
+              properties:
+                command:
+                  type: string
+                response_session_id_jsonpath:
+                  type: string
+            message:
+              type: object
+              required:
+              - command
+              properties:
+                command:
+                  type: string
+                  description: Curl command for the probe message. `{{MESSAGE}}` and `{{SESSION_ID}}`
+                    are filled in.
+                response_message_jsonpaths:
+                  type: array
+                  items:
+                    type: string
+                  description: JSON paths used to read the agent's reply.
         timeout:
           type: number
           default: 10.0
@@ -3996,6 +5323,18 @@ components:
                   is_hallucination_trap:
                     type: boolean
                     default: false
+                    description: 'True when the question has no supported answer. A correct reply refuses
+                      to invent one. Cannot be combined with is_false_premise.
+
+                      '
+                  is_false_premise:
+                    type: boolean
+                    default: false
+                    description: 'True when the question states a false assumption about a real topic.
+                      correct_answer is the supported correction. A correct reply rejects the assumption
+                      and gives that correction. Cannot be combined with is_hallucination_trap.
+
+                      '
         qna_user_edited:
           type: boolean
           default: false
@@ -4007,7 +5346,8 @@ components:
           type: boolean
           default: false
           description: 'Accepted when the caller confirms a name already in use. An existing tag still
-            keeps its questions, and a built-in name is still refused.
+            keeps its question text and reference answers. A republish may correct is_hallucination_trap
+            and is_false_premise. A built-in name is still refused.
 
             '
     RegisterClientQnaResponse:
@@ -4306,7 +5646,7 @@ components:
           - type: array
             items:
               type: string
-          description: 'Benchmark family when set (e.g. agentharm, gaia, qna). Benchmark tags are generally
+          description: 'Benchmark family when set (e.g. gaia, gdpval, qna). Benchmark tags are generally
             info_exchange only; qna tags are interview only and must be the sole tag.
 
             '
